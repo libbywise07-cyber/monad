@@ -89,7 +89,7 @@ export default function CalendarSync({ profile, onSynced }: { profile: Profile; 
         <ProviderMark provider="google" />
         <span>
           Using a calendar you uploaded {ago(link.connectedAt)}. It won&apos;t pick up changes.{" "}
-          <Link href="/onboarding?step=4">Connect with your calendar&apos;s private link</Link> to stay in sync automatically.
+          <Link href="/onboarding?step=6">Connect with your calendar&apos;s private link</Link> to stay in sync automatically.
         </span>
       </div>
     ) : null;

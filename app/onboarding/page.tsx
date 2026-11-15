@@ -347,8 +347,8 @@ export default function Onboarding() {
           <>
             <h2>Your weekly schedule</h2>
             <p className="muted">We only schedule meals in your free time. Add every class, shift, practice and study block.</p>
-            <IcsImport schedule={p.schedule} onChange={(schedule) => up("schedule", schedule)} />
             <CalendarConnect link={p.calendar} schedule={p.schedule} onChange={(calendar, schedule) => setP((x) => ({ ...x, calendar, schedule }))} />
+            <IcsImport schedule={p.schedule} onChange={(schedule) => up("schedule", schedule)} />
             <div className="grid g2">
               <div>
                 <label>Weekday wake / sleep</label>
