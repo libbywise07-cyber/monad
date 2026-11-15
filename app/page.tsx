@@ -1,14 +1,15 @@
 "use client";
 import Link from "next/link";
 import { useStored } from "@/lib/store";
+import Icon, { type IconName } from "@/components/Icons";
 
-const FEATURES = [
-  ["🗓️", "Plans around your classes", "Add your class, work and practice blocks. Meals land in your real free time, with grab-and-go options for back-to-back days."],
-  ["🥗", "Your diet and goals", "Allergies, vegan or halal, macro targets, more energy or muscle gain. Every meal follows your rules."],
-  ["🏠", "Dorm, apartment or Greek house", "Only a microwave and mini fridge? Recipes adjust to your appliances, skill level and dining hall swipes."],
-  ["📸", "Scan your fridge", "Snap your pantry and fridge. AI finds what you already have and builds meals around it."],
-  ["💸", "Stays on budget", "Set a weekly budget and get one grocery list with estimated costs."],
-  ["📍", "Stores near you", "Enter your address to see nearby grocery stores, sorted by distance and price."],
+const FEATURES: [IconName, string, string][] = [
+  ["calendar", "Plans around your classes", "Add your class, work and practice blocks. Meals land in your real free time, with grab-and-go options for back-to-back days."],
+  ["leaf", "Your diet and goals", "Allergies, vegan or halal, macro targets, more energy or muscle gain. Every meal follows your rules."],
+  ["home", "Dorm, apartment or Greek house", "Only a microwave and mini fridge? Recipes adjust to your appliances, skill level and dining hall swipes."],
+  ["camera", "Scan your fridge", "Snap your pantry and fridge. AI finds what you already have and builds meals around it."],
+  ["wallet", "Stays on budget", "Set a weekly budget and get one grocery list with estimated costs."],
+  ["pin", "Stores near you", "Enter your address to see nearby grocery stores, sorted by distance and price."],
 ];
 
 export default function Home() {
@@ -17,8 +18,8 @@ export default function Home() {
   return (
     <main className="wrap">
       <nav className="row between">
-        <Link href="/" className="brand">
-          Campus<span>Fuel</span>
+        <Link href="/" className="brand" aria-label="CampusFuel home">
+          campus<span>fuel</span>
         </Link>
         {returning ? (
           <Link href="/dashboard" className="btn sm">
@@ -27,19 +28,17 @@ export default function Home() {
         ) : null}
       </nav>
       <section className="hero">
-        <span className="tag">For students who don&apos;t have time to eat</span>
+        <span className="sticker">for students who don&apos;t have time to eat</span>
         <h1 style={{ marginTop: 14 }}>
-          Meal plans that fit
-          <br />
-          your class schedule.
+          meal plans that fit your <mark>class schedule</mark>
         </h1>
         <p className="lead">
-          Tell CampusFuel your schedule, kitchen, diet, budget and what&apos;s in your fridge. You get a week of meals
-          timed to your actual breaks, with a grocery list to match.
+          Drop in your schedule, kitchen, diet, budget and what&apos;s in your fridge. Get a week of meals that actually fit
+          between classes, the healthiest picks at your dining hall, and a grocery list that won&apos;t wreck your budget.
         </p>
         <div className="row" style={{ marginTop: 20 }}>
           <Link href={returning ? "/dashboard" : "/onboarding"} className="btn primary">
-            {returning ? `Welcome back, ${profile?.name} →` : "Build my plan (3 min) →"}
+            {returning ? `welcome back, ${profile?.name} →` : "build my plan · 3 min →"}
           </Link>
           {returning ? (
             <Link href="/onboarding" className="btn">
@@ -50,11 +49,13 @@ export default function Home() {
       </section>
       <section className="grid g2">
         {FEATURES.map(([ic, t, d]) => (
-          <div key={t} className="card feature">
-            <div className="ic">{ic}</div>
+          <div key={t} className="feature">
+            <div className="ic">
+              <Icon name={ic} />
+            </div>
             <div>
               <h3>{t}</h3>
-              <p className="muted small" style={{ margin: 0 }}>
+              <p className="small" style={{ margin: 0 }}>
                 {d}
               </p>
             </div>

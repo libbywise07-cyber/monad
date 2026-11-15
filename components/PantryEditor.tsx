@@ -1,6 +1,7 @@
 "use client";
 import { useRef, useState } from "react";
 import type { PantryItem } from "@/lib/types";
+import Icon from "./Icons";
 
 type Media = "image/jpeg";
 
@@ -80,7 +81,7 @@ export default function PantryEditor({ value, onChange }: { value: PantryItem[];
           </div>
         ) : (
           <>
-            <div style={{ fontSize: 28 }}>📸</div>
+            <Icon name="camera" size={28} />
             <b>Snap or upload photos of your fridge and pantry</b>
             <div className="muted small">Up to 4 photos. AI picks out what you already have.</div>
           </>

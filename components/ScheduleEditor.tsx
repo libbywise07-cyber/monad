@@ -97,7 +97,7 @@ export default function ScheduleEditor({ value, onChange, travelDefault = 10 }: 
                 <td>
                   {fmt12(b.start)}–{fmt12(b.end)}
                   <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
-                    <span className="muted small">🚶</span>
+                    <span className="muted small">travel</span>
                     <input
                       type="number"
                       min={0}

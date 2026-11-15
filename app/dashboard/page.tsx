@@ -1,23 +1,74 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
 import GroceryList from "@/components/GroceryList";
 import NutritionExplainer from "@/components/NutritionExplainer";
 import ThemePicker from "@/components/ThemePicker";
 import MealsToCalendar from "@/components/MealsToCalendar";
-import { ProviderMark } from "@/components/CalendarConnect";
 import MealFeedback, { REASON_LABEL, type Feedback } from "@/components/MealFeedback";
-import DiningTab, { diningSummary } from "@/components/DiningTab";
+import DiningTab, { diningSummary, hasMealPlan } from "@/components/DiningTab";
+import Icon, { type IconName } from "@/components/Icons";
 import { fmtPoints } from "@/lib/dining/budget";
 import { requestPlan, resetAll, useStored } from "@/lib/store";
-import { fmt12, freeTimeLabel, nextBusy, STEP_LABEL, swapMeal, toMin } from "@/lib/planner";
+import { fmt12, fmtDuration, freeTimeLabel, nextBusy, STEP_LABEL, swapMeal, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type Macros, type MealPlan, type PlannedMeal, type Profile } from "@/lib/types";
 
 type Tab = "today" | "week" | "dining" | "groceries" | "pantry" | "profile";
 const todayIdx = () => ((new Date().getDay() + 6) % 7) as DayIndex;
+
+const NAV: [Tab, string, IconName][] = [
+  ["today", "Day", "home"],
+  ["week", "Week", "calendar"],
+  ["dining", "Dining", "dining"],
+  ["groceries", "Groceries", "cart"],
+  ["pantry", "Pantry", "pantry"],
+  ["profile", "Profile", "user"],
+];
+const TAB_TITLES: Record<Tab, [string, string]> = {
+  today: ["what's on", "your plate today"],
+  week: ["your week", "of eats"],
+  dining: ["dining hall", "+ your points"],
+  groceries: ["the grocery", "run"],
+  pantry: ["what's in", "your kitchen"],
+  profile: ["you,", "in a nutshell"],
+};
+const REC_BG = ["var(--t-sky)", "var(--t-leaf)", "var(--t-lav)", "var(--t-peony)", "var(--t-rose)"];
+const greeting = () => {
+  const h = new Date().getHours();
+  return h < 12 ? "good morning" : h < 18 ? "good afternoon" : "good evening";
+};
+
+
+/** Date (day of month) for a plan day: the next time that weekday comes up, starting today. */
+function dateFor(d: DayIndex): Date {
+  const x = new Date();
+  x.setDate(x.getDate() + ((d - todayIdx() + 7) % 7));
+  return x;
+}
+
+function Ring({ pct, size = 64 }: { pct: number; size?: number }) {
+  const r = (size - 10) / 2;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg className="ring" width={size} height={size} viewBox={`0 0 ${size} ${size}`} aria-hidden>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="var(--card)" strokeWidth={8} opacity={0.8} />
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke="var(--brand)"
+        strokeWidth={8}
+        strokeLinecap="round"
+        strokeDasharray={`${Math.min(1, pct) * c} ${c}`}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+      />
+    </svg>
+  );
+}
 
 function MacroBar({ label, val, target, unit = "g" }: { label: string; val: number; target: number; unit?: string }) {
   const pct = target ? Math.min(100, (val / target) * 100) : 0;
@@ -37,92 +88,310 @@ function MacroBar({ label, val, target, unit = "g" }: { label: string; val: numb
   );
 }
 
-function Macrosline({ m }: { m: Macros }) {
+/** The four pastel stat tiles at the top of the Day view. */
+function DayTiles({ plan, day, profile }: { plan: MealPlan; day: DayIndex; profile: Profile }) {
+  const dp = plan.days.find((d) => d.day === day);
+  if (!dp) return null;
+  const t = dp.target ?? plan.targets;
+  const proteinByMeal = dp.meals.map((m) => m.macros.protein);
+  const maxP = Math.max(1, ...proteinByMeal);
+  const dining = plan.dining;
+  const diningMeals = plan.days.reduce((a, d) => a + d.meals.filter((m) => m.source === "dining").length, 0);
   return (
-    <span className="muted small">
-      {m.kcal} kcal · {m.protein}g P · {m.carbs}g C · {m.fat}g F
-    </span>
+    <div className="tiles">
+      <div className="tile peony">
+        <div className="tile-top">
+          <span className="tile-ic">
+            <Icon name="flame" size={18} />
+          </span>
+          <span className="tile-label">Calories</span>
+        </div>
+        <div className="tile-val">
+          {dp.totals.kcal.toLocaleString()}
+          <small>/ {t.kcal.toLocaleString()}</small>
+        </div>
+        <Ring pct={dp.totals.kcal / t.kcal} />
+      </div>
+      <div className="tile lav">
+        <div className="tile-top">
+          <span className="tile-ic">
+            <Icon name="dumbbell" size={18} />
+          </span>
+          <span className="tile-label">Protein</span>
+        </div>
+        <div className="tile-val">
+          {dp.totals.protein}g<small>/ {t.protein}g</small>
+        </div>
+        <div className="mini-bars tile-foot" aria-label="Protein per meal">
+          {proteinByMeal.map((v, k) => (
+            <span key={k} className={v === maxP ? "hi" : ""} style={{ height: `${Math.max(12, (v / maxP) * 100)}%` }} />
+          ))}
+        </div>
+      </div>
+      <div className="tile sky">
+        <div className="tile-top">
+          <span className="tile-ic">
+            <Icon name="grain" size={18} />
+          </span>
+          <span className="tile-label">Carbs & fat</span>
+        </div>
+        <div className="tile-foot stack" style={{ display: "grid", gap: 8 }}>
+          <MacroBar label="Carbs" val={dp.totals.carbs} target={t.carbs} />
+          <MacroBar label="Fat" val={dp.totals.fat} target={t.fat} />
+        </div>
+      </div>
+      {dining && dining.pointsPerWeek > 0 ? (
+        <div className="tile leaf">
+          <div className="tile-top">
+            <span className="tile-ic">
+              <Icon name="coin" size={18} />
+            </span>
+            <span className="tile-label">{dining.pointsLabel} this week</span>
+          </div>
+          <div className="tile-val">
+            {Math.round(dining.points)}
+            <small>/ {Math.round(dining.pointsPerWeek)}</small>
+          </div>
+          <div className="tile-foot small muted">
+            {dining.swipes ? `+ ${dining.swipes} swipes · ` : ""}
+            {dining.hall}
+          </div>
+        </div>
+      ) : diningMeals ? (
+        <div className="tile leaf">
+          <div className="tile-top">
+            <span className="tile-ic">
+              <Icon name="dining" size={18} />
+            </span>
+            <span className="tile-label">Dining hall</span>
+          </div>
+          <div className="tile-val">
+            {diningMeals}
+            <small>meals this week</small>
+          </div>
+          <div className="tile-foot small muted">{dining?.hall || "Swipes"}</div>
+        </div>
+      ) : (
+        <div className="tile leaf">
+          <div className="tile-top">
+            <span className="tile-ic">
+              <Icon name="cart" size={18} />
+            </span>
+            <span className="tile-label">Groceries</span>
+          </div>
+          <div className="tile-val">
+            ${plan.groceryTotal.toFixed(0)}
+            <small>/ ${profile.weeklyBudget}</small>
+          </div>
+          <div className="tile-foot small muted">{plan.groceries.length} items this week</div>
+        </div>
+      )}
+    </div>
   );
 }
 
-function MealCard({
+/** "10:00 AM" */
+const fmtTime = (t: string) => fmt12(t).replace(/(am|pm)$/, " $1").toUpperCase();
+
+/** When a meal fits around the day's classes: "Right after Bio · 45 min before Chem at 1:00 PM". */
+function whenNote(profile: Profile, day: DayIndex, m: PlannedMeal): string {
+  const t = toMin(m.time);
+  const blocks = profile.schedule.filter((b) => b.days.includes(day));
+  const prev = blocks.filter((b) => toMin(b.end) <= t && t - toMin(b.end) <= 30).sort((a, b) => toMin(b.end) - toMin(a.end))[0];
+  const next = blocks.filter((b) => toMin(b.start) > t).sort((a, b) => toMin(a.start) - toMin(b.start))[0];
+  const parts: string[] = [];
+  if (m.source === "dining") parts.push(`At ${m.dining?.hall || "the dining hall"}`);
+  if (prev) parts.push(`Right after ${prev.label}`);
+  if (next && toMin(next.start) - t <= 180) parts.push(`${fmtDuration(toMin(next.start) - t)} before ${next.label} at ${fmtTime(next.start)}`);
+  if (m.source === "prepped") parts.push("Made ahead in your prep session");
+  return parts.join(" · ");
+}
+
+const splitTime = (t: string) => {
+  const f = fmt12(t);
+  return { time: f.slice(0, -2), ap: f.slice(-2).toUpperCase() };
+};
+
+function MealRow({
   m,
+  when,
+  free,
   pointsLabel,
-  next,
   onSwap,
   onHide,
 }: {
   m: PlannedMeal;
+  when: string;
+  free: string;
   pointsLabel: string;
-  next?: { label: string; start: string };
   onSwap?: () => void;
   onHide?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const isPlate = Boolean(m.dining?.items.length);
+  const t = splitTime(m.time);
   return (
-    <div className={`card tl-meal ${m.type === "snack" ? "snack" : ""}`} style={{ padding: 14 }}>
-      <div className="row between" style={{ alignItems: "flex-start" }}>
-        <div>
-          <div className="small muted">
-            <span style={{ textTransform: "capitalize" }}>{m.type}</span>
-            {m.windowMin && freeTimeLabel(m.windowMin, next) ? ` · ${freeTimeLabel(m.windowMin, next)}` : ""}
-          </div>
-          <h3 style={{ margin: "2px 0" }}>{m.name}</h3>
-          <Macrosline m={m.macros} />
+    <li className={`dp-row ${m.type}`}>
+      <div className="dp-time">
+        <b>{t.time}</b>
+        <small>{t.ap}</small>
+      </div>
+      <div className="dp-main">
+        <div className="dp-type">
+          {m.type}
+          {free ? <span className="dp-free"> · {free}</span> : null}
         </div>
-        <div className="row" style={{ gap: 6 }}>
+        <div className="dp-name">{m.name}</div>
+        {when ? (
+          <div className="dp-when">
+            <Icon name="clock" size={14} /> {when}
+          </div>
+        ) : null}
+        <div className="dp-meta">
+          {m.macros.kcal} kcal · {m.macros.protein}g protein · {m.macros.carbs}g carbs · {m.macros.fat}g fat
+        </div>
+        <div className="dp-tags">
           {m.source === "dining" ? (
-            <span className="tag">{m.dining?.pay === "points" ? `🪙 ${fmtPoints(m.dining.points, pointsLabel)}` : "🍽️ swipe"}</span>
+            <span className="tag sky">{m.dining?.pay === "points" ? fmtPoints(m.dining.points, pointsLabel) : "Meal swipe"}</span>
           ) : null}
-          {m.source === "prepped" ? <span className="tag warn">🥡 prep ahead</span> : null}
-          {m.portable ? <span className="tag">🎒 portable</span> : null}
-          {m.prepMin ? <span className="tag">⏱ {m.prepMin}m</span> : null}
+          {m.source === "prepped" ? <span className="tag warn">Prep ahead</span> : null}
+          {m.portable ? <span className="tag lav">Portable</span> : null}
+          {m.prepMin ? <span className="tag">{m.prepMin} min</span> : null}
         </div>
-      </div>
-      <p className="small" style={{ margin: "8px 0 0" }}>
-        {m.why}
-      </p>
-      {m.usesPantry.length ? <p className="small muted" style={{ margin: "4px 0 0" }}>✅ From your pantry: {m.usesPantry.join(", ")}</p> : null}
-      <div className="row meal-actions">
-        <button type="button" className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => setOpen(!open)}>
-          {m.dining?.items.length ? (open ? "Hide plate ▲" : `What to get at ${m.dining.hall} ▼`) : open ? "Hide recipe ▲" : "Show recipe ▼"}
-        </button>
-        {onSwap ? (
-          <button type="button" className="btn sm" onClick={onSwap}>
-            ↻ New meal
-          </button>
-        ) : null}
-        {onHide ? (
-          <button type="button" className="btn ghost sm" onClick={onHide}>
-            🚫 Don&apos;t show again
-          </button>
-        ) : null}
-      </div>
-      {open ? (
-        <div className="grid g2 small">
-          {m.ingredients.length ? (
+        {m.why ? <p className="dp-why">{m.why}</p> : null}
+        {m.usesPantry.length ? <p className="dp-why muted">From your pantry: {m.usesPantry.join(", ")}</p> : null}
+        <div className="dp-actions">
+          {m.steps.length || m.ingredients.length ? (
+            <button type="button" className="dp-link" aria-expanded={open} onClick={() => setOpen(!open)}>
+              {open ? "Hide recipe" : "Show recipe"}
+              <span className={`dp-caret ${open ? "up" : ""}`} aria-hidden>
+                <Icon name="chevronDown" size={14} />
+              </span>
+            </button>
+          ) : null}
+          {onSwap ? (
+            <button type="button" className="dp-link quiet" onClick={onSwap}>
+              <Icon name="refresh" size={14} /> New meal
+            </button>
+          ) : null}
+          {onHide ? (
+            <button type="button" className="dp-link quiet" onClick={onHide}>
+              Don&apos;t show again
+            </button>
+          ) : null}
+        </div>
+        {open ? (
+          <div className="meal-detail small grid g2">
+            {m.ingredients.length ? (
+              <div>
+                <b>Ingredients</b>
+                <ul className="dp-steps">
+                  {m.ingredients.map((x) => (
+                    <li key={x.name}>
+                      {x.qty} {x.name}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ) : null}
             <div>
-              <b>Ingredients</b>
-              <ul style={{ margin: "4px 0", paddingLeft: 18 }}>
-                {m.ingredients.map((i) => (
-                  <li key={i.name}>
-                    {i.qty} {i.name}
-                  </li>
+              <b>{isPlate ? "Your plate" : "Steps"}</b>
+              <ol className="dp-steps">
+                {m.steps.map((st, k) => (
+                  <li key={k}>{st}</li>
                 ))}
-              </ul>
+              </ol>
             </div>
-          ) : null}
-          <div>
-            <b>{m.dining?.items.length ? "Your plate" : "Steps"}</b>
-            <ol style={{ margin: "4px 0", paddingLeft: 18 }}>
-              {m.steps.map((s, k) => (
-                <li key={k}>{s}</li>
-              ))}
-            </ol>
           </div>
+        ) : null}
+      </div>
+    </li>
+  );
+}
+
+/** Today's next meal at a glance: what it is, when, and how long until then. */
+function UpNext({ plan, profile }: { plan: MealPlan; profile: Profile }) {
+  const [now, setNow] = useState(() => new Date().getHours() * 60 + new Date().getMinutes());
+  useEffect(() => {
+    const t = setInterval(() => setNow(new Date().getHours() * 60 + new Date().getMinutes()), 60_000);
+    return () => clearInterval(t);
+  }, []);
+  const day = todayIdx();
+  const meals = [...(plan.days.find((d) => d.day === day)?.meals || [])].sort((a, b) => toMin(a.time) - toMin(b.time));
+  const next = meals.find((m) => toMin(m.time) >= now - 15); // still "up next" for the first 15 minutes
+  if (!next) return null;
+  const diff = toMin(next.time) - now;
+  const t = splitTime(next.time);
+  const when = whenNote(profile, day, next);
+  return (
+    <div className="upnext">
+      <div className="upnext-time">
+        <b>{t.time}</b>
+        <small>{t.ap}</small>
+      </div>
+      <div style={{ minWidth: 0 }}>
+        <div className="upnext-label">
+          up next · {next.type} · {diff > 0 ? `in ${fmtDuration(diff)}` : "now"}
         </div>
-      ) : null}
+        <div className="upnext-name">{next.name}</div>
+        <div className="upnext-meta">
+          {next.macros.kcal} kcal · {next.macros.protein}g protein
+          {when ? ` · ${when}` : ""}
+        </div>
+      </div>
     </div>
+  );
+}
+
+/** The day's meals in time order: when to eat, what it is, and the recipe if there's something to make. */
+function DayPlan({
+  plan,
+  profile,
+  day,
+  onSwap,
+  onHide,
+}: {
+  plan: MealPlan;
+  profile: Profile;
+  day: DayIndex;
+  onSwap: (m: PlannedMeal) => void;
+  onHide: (m: PlannedMeal) => void;
+}) {
+  const dp = plan.days.find((d) => d.day === day);
+  const meals = [...(dp?.meals || [])].sort((a, b) => toMin(a.time) - toMin(b.time));
+  const prep = plan.prepSession && plan.prepSession.day === day ? plan.prepSession : null;
+  if (!meals.length && !prep) return <p className="muted">No meals planned for this day.</p>;
+  const pointsLabel = plan.dining?.pointsLabel || "points";
+  return (
+    <ol className="dayplan">
+      {meals.map((m, k) => (
+        <MealRow
+          key={k}
+          m={m}
+          when={whenNote(profile, day, m)}
+          free={m.windowMin ? freeTimeLabel(m.windowMin, nextBusy(profile, day, m.time)) : ""}
+          pointsLabel={pointsLabel}
+          onSwap={m.source !== "dining" ? () => onSwap(m) : undefined}
+          onHide={m.source !== "dining" ? () => onHide(m) : undefined}
+        />
+      ))}
+      {prep ? (
+        <li className="dp-row prep">
+          <div className="dp-time">
+            <b>{splitTime(prep.time).time}</b>
+            <small>{splitTime(prep.time).ap}</small>
+          </div>
+          <div className="dp-main">
+            <div className="dp-type">meal prep · {fmtDuration(prep.durationMin)}</div>
+            <ul className="dp-steps small" style={{ marginTop: 4 }}>
+              {prep.tasks.map((x) => (
+                <li key={x}>{x}</li>
+              ))}
+            </ul>
+          </div>
+        </li>
+      ) : null}
+    </ol>
   );
 }
 
@@ -171,13 +440,6 @@ function Today({
     swap(m, next);
     setToast(`Got it. We won't suggest ${name} again${f.reason === "ingredient" ? ` or anything with ${f.ingredients.join(", ")}` : ""}.`);
   };
-  const items = useMemo(() => {
-    const busy = profile.schedule
-      .filter((b) => b.days.includes(day))
-      .map((b) => ({ t: toMin(b.start), kind: "busy" as const, b }));
-    const meals = (dp?.meals || []).map((m) => ({ t: toMin(m.time), kind: "meal" as const, m }));
-    return [...busy, ...meals].sort((a, b) => a.t - b.t);
-  }, [dp, profile.schedule, day]);
 
   return (
     <div className="grid" style={{ gridTemplateColumns: "minmax(0,1fr)", gap: 16 }}>
@@ -187,11 +449,18 @@ function Today({
           <MealsToCalendar link={profile.calendar} plan={plan} schedule={profile.schedule} day={day} />
         </div>
       ) : null}
-      <div className="daypick">
-        {DAYS.map((d, i) => (
-          <button key={d} type="button" className={`chip ${i === day ? "on" : ""}`} onClick={() => setDay(i as DayIndex)}>
-            {d}
-            {i === todayIdx() ? " •" : ""}
+      <div className="datepick" role="tablist" aria-label="Day">
+        {DAYS.map((_, k) => (k + todayIdx()) % 7).map((i) => (
+          <button
+            key={i}
+            type="button"
+            role="tab"
+            aria-selected={i === day}
+            className={`${i === day ? "on" : ""} ${i === todayIdx() ? "today" : ""}`}
+            onClick={() => setDay(i as DayIndex)}
+          >
+            <small>{i === todayIdx() ? "Today" : DAYS[i]}</small>
+            <b>{dateFor(i as DayIndex).getDate()}</b>
           </button>
         ))}
       </div>
@@ -203,59 +472,19 @@ function Today({
           </button>
         </div>
       ) : null}
-      {dp ? (
-        <div className="card stack">
-          {dp.burn?.kcal ? (
-            <div className="small">
-              🏋️ <b>Workout day:</b> +{dp.burn.kcal} kcal for {dp.burn.what.join(", ")}
-            </div>
-          ) : null}
-          <div className="grid g2">
-            <MacroBar label="Calories" val={dp.totals.kcal} target={(dp.target ?? plan.targets).kcal} unit="" />
-            <MacroBar label="Protein" val={dp.totals.protein} target={(dp.target ?? plan.targets).protein} />
-            <MacroBar label="Carbs" val={dp.totals.carbs} target={(dp.target ?? plan.targets).carbs} />
-            <MacroBar label="Fat" val={dp.totals.fat} target={(dp.target ?? plan.targets).fat} />
-          </div>
+      {day === todayIdx() ? <UpNext plan={plan} profile={profile} /> : null}
+      {dp?.burn?.kcal ? (
+        <div className="notice small">
+          <b>Workout day:</b> +{dp.burn.kcal} kcal for {dp.burn.what.join(", ")}
         </div>
       ) : null}
+      <DayTiles plan={plan} day={day} profile={profile} />
       {hiding ? <MealFeedback meal={hiding} onCancel={() => setHiding(null)} onSubmit={(f) => hide(hiding, f)} /> : null}
-      {plan.prepSession && plan.prepSession.day === day ? (
-        <div className="notice">
-          <b>🧑‍🍳 Meal prep session · {fmt12(plan.prepSession.time)} ({plan.prepSession.durationMin} min)</b>
-          <ul style={{ margin: "6px 0 0", paddingLeft: 18 }}>
-            {plan.prepSession.tasks.map((t) => (
-              <li key={t}>{t}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      <div className="timeline">
-        {items.length ? (
-          items.map((it, k) =>
-            it.kind === "busy" ? (
-              <div className="tl-item" key={`b${k}`}>
-                <div className="tl-time">{fmt12(it.b.start)}</div>
-                <div className="tl-busy">
-                  {it.b.source ? <ProviderMark provider={it.b.source} /> : null} {it.b.label} <span style={{ fontWeight: 400 }}>· until {fmt12(it.b.end)}</span>
-                </div>
-              </div>
-            ) : (
-              <div className="tl-item" key={`m${k}`}>
-                <div className="tl-time">{fmt12(it.m.time)}</div>
-                <MealCard
-                  m={it.m}
-                  pointsLabel={plan.dining?.pointsLabel || "points"}
-                  next={nextBusy(profile, day, it.m.time)}
-                  onSwap={it.m.source !== "dining" ? () => swap(it.m) : undefined}
-                  onHide={it.m.source !== "dining" ? () => setHiding(it.m) : undefined}
-                />
-              </div>
-            ),
-          )
-        ) : (
-          <p className="muted">Nothing scheduled for this day.</p>
-        )}
+      <div className="section-head">
+        <h2>{day === todayIdx() ? "today's plan" : `${DAYS[day]}'s plan`}</h2>
+        <span className="small muted">{dp?.meals.length ?? 0} meals planned</span>
       </div>
+      <DayPlan plan={plan} profile={profile} day={day} onSwap={(m) => swap(m)} onHide={(m) => setHiding(m)} />
     </div>
   );
 }
@@ -264,8 +493,10 @@ function Week({ plan }: { plan: MealPlan }) {
   return (
     <div className="week">
       {plan.days.map((d) => (
-        <div className="col" key={d.day}>
-          <b>{DAYS[d.day]}</b>
+        <div className={`col ${d.day === todayIdx() ? "today" : ""}`} key={d.day}>
+          <b>
+            {DAYS[d.day]} {dateFor(d.day).getDate()}
+          </b>
           <div className="muted small">
             {d.totals.kcal} kcal · {d.totals.protein}g P
           </div>
@@ -423,6 +654,12 @@ export default function Dashboard() {
   const router = useRouter();
   const { profile, plan, setProfile, setPlan } = useStored();
   const [tab, setTab] = useState<Tab>("today");
+  // The Dining tab only shows for students on a meal plan.
+  const showDining = profile ? hasMealPlan(profile) : false;
+  const nav = NAV.filter(([t]) => t !== "dining" || showDining);
+  useEffect(() => {
+    if (tab === "dining" && profile && !showDining) setTab("today");
+  }, [tab, profile, showDining]);
   const [day, setDay] = useState<DayIndex>(todayIdx());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -451,47 +688,47 @@ export default function Dashboard() {
   if (!profile) return <main className="wrap muted">Loading…</main>;
 
   return (
-    <main className="wrap">
-      <nav className="row between" style={{ marginBottom: 12 }}>
-        <Link href="/" className="brand">
-          Campus<span>Fuel</span>
-        </Link>
-        <button type="button" className="btn sm primary" onClick={() => rebuild(profile)} disabled={busy}>
-          {busy ? (
-            <>
-              <span className="spinner" /> Planning…
-            </>
-          ) : (
-            "↻ New plan"
-          )}
-        </button>
-      </nav>
-      <h1 style={{ fontSize: 28 }}>Hey {profile.name} 👋</h1>
-      {plan ? (
-        <p className="muted">
-          Daily target: <b>{plan.targets.kcal} kcal</b> · {plan.targets.protein}g protein · {plan.targets.carbs}g carbs · {plan.targets.fat}g fat ·{" "}
-          {plan.engine === "ai" ? "✨ AI plan" : "Rule-based plan"}
+    <main className="wrap has-nav">
+      <header className="row between">
+        <div className="greet">
+          <span className="avatar" aria-hidden>
+            {(profile.name || "?").trim().charAt(0).toUpperCase()}
+          </span>
+          <div>
+            <div className="small muted">{greeting()}</div>
+            <div style={{ fontWeight: 600, fontSize: 17 }}>hey {profile.name}</div>
+          </div>
+        </div>
+        <div className="row" style={{ gap: 8 }}>
+          <Link href="/" className="brand hide-sm" style={{ marginRight: 6 }} aria-label="CampusFuel home">
+            campus<span>fuel</span>
+          </Link>
+          <button type="button" className="icon-btn dark" onClick={() => rebuild(profile)} disabled={busy} aria-label="Build a new plan" title="New plan">
+            {busy ? <span className="spinner" /> : <Icon name="refresh" />}
+          </button>
+        </div>
+      </header>
+      <h1 className="headline">
+        {TAB_TITLES[tab][0]}
+        <br />
+        <b>{TAB_TITLES[tab][1]}</b>
+      </h1>
+      {plan && tab === "today" ? (
+        <p className="muted small" style={{ marginTop: -8 }}>
+          Daily target {plan.targets.kcal} kcal · {plan.targets.protein}g protein · {plan.engine === "ai" ? "AI plan" : "built-in planner"}
         </p>
       ) : null}
-      {plan?.note ? <div className="notice" style={{ marginBottom: 12 }}>{plan.note}</div> : null}
+      {plan?.note ? <div className="notice" style={{ marginBottom: 14 }}>{plan.note}</div> : null}
       {err ? <p className="err">{err}</p> : null}
 
-      <div className="tabs" role="tablist">
-        {(
-          [
-            ["today", "Day"],
-            ["week", "Week"],
-            ["dining", "Dining"],
-            ["groceries", "Groceries"],
-            ["pantry", "Pantry"],
-            ["profile", "Profile"],
-          ] as [Tab, string][]
-        ).map(([t, l]) => (
-          <button key={t} type="button" role="tab" aria-selected={tab === t} className={`tab ${tab === t ? "on" : ""}`} onClick={() => setTab(t)}>
-            {l}
+      <nav className="bottom-nav" role="tablist" aria-label="Sections">
+        {nav.map(([t, label, icon]) => (
+          <button key={t} type="button" role="tab" aria-selected={tab === t} className={tab === t ? "on" : ""} onClick={() => setTab(t)}>
+            <Icon name={icon} />
+            {label}
           </button>
         ))}
-      </div>
+      </nav>
 
       {!plan ? (
         <div className="row muted">
@@ -501,7 +738,7 @@ export default function Dashboard() {
         <>
           {tab === "today" && <Today plan={plan} profile={profile} day={day} setDay={setDay} setPlan={setPlan} setProfile={setProfile} />}
           {tab === "week" && <Week plan={plan} />}
-          {tab === "dining" && <DiningTab profile={profile} plan={plan} setProfile={setProfile} rebuild={rebuild} busy={busy} />}
+          {tab === "dining" && showDining && <DiningTab profile={profile} plan={plan} setProfile={setProfile} rebuild={rebuild} busy={busy} />}
           {tab === "groceries" && <Groceries plan={plan} profile={profile} setProfile={setProfile} />}
           {tab === "pantry" && (
             <div className="card stack">
@@ -519,14 +756,21 @@ export default function Dashboard() {
             </div>
           )}
           {plan.tips.length && tab === "today" ? (
-            <div className="card" style={{ marginTop: 16 }}>
-              <h3>Tips for you</h3>
-              <ul style={{ margin: 0, paddingLeft: 18 }} className="small">
-                {plan.tips.map((t) => (
-                  <li key={t}>{t}</li>
+            <>
+              <div className="section-head">
+                <h2>Daily recommendations</h2>
+              </div>
+              <div className="recs">
+                {plan.tips.map((t, k) => (
+                  <div className="rec" key={t}>
+                    <span className="rec-ic" style={{ background: REC_BG[k % REC_BG.length] }} aria-hidden>
+                      <Icon name="check" size={16} />
+                    </span>
+                    <span>{t}</span>
+                  </div>
                 ))}
-              </ul>
-            </div>
+              </div>
+            </>
           ) : null}
         </>
       )}

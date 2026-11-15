@@ -98,8 +98,8 @@ export default function Onboarding() {
   return (
     <main className="wrap narrow">
       <nav className="row between" style={{ marginBottom: 18 }}>
-        <Link href="/" className="brand">
-          Campus<span>Fuel</span>
+        <Link href="/" className="brand" aria-label="CampusFuel home">
+          campus<span>fuel</span>
         </Link>
         {editing ? (
           <Link href="/dashboard" className="btn sm">
@@ -277,10 +277,10 @@ export default function Onboarding() {
             <div className="option-grid">
               {(
                 [
-                  ["dorm", "🏢 Dorm", "Microwave + mini fridge"],
-                  ["apartment", "🏠 Apartment", "Full kitchen"],
-                  ["greek", "🏛️ Sorority / frat house", "Shared kitchen or house chef"],
-                  ["home", "🏡 Living at home", "Family kitchen"],
+                  ["dorm", "Dorm", "Microwave + mini fridge"],
+                  ["apartment", "Apartment", "Full kitchen"],
+                  ["greek", "Sorority / frat house", "Shared kitchen or house chef"],
+                  ["home", "Living at home", "Family kitchen"],
                 ] as [Housing, string, string][]
               ).map(([v, t, s]) => (
                 <Option
@@ -433,7 +433,7 @@ export default function Onboarding() {
                 ) : editing ? (
                   "Save & rebuild plan"
                 ) : (
-                  "Build my meal plan 🎉"
+                  "Build my meal plan"
                 )}
               </button>
             )}

@@ -1,33 +1,33 @@
-// Color theme + light/dark choice, saved per browser.
+// Color theme choice (pastel variations of the CampusFuel look), saved per browser. Light only.
 
 export const PALETTES = [
-  { id: "teal", name: "Fresh", colors: ["#0f766e", "#e3f3f1", "#f59e0b"] },
-  { id: "berry", name: "Berry", colors: ["#a21caf", "#fae8ff", "#f59e0b"] },
-  { id: "ocean", name: "Ocean", colors: ["#1d4ed8", "#e0eaff", "#f59e0b"] },
-  { id: "citrus", name: "Citrus", colors: ["#c2410c", "#ffedd5", "#f59e0b"] },
-  { id: "forest", name: "Forest", colors: ["#3f6212", "#ecfccb", "#f59e0b"] },
-  { id: "mono", name: "Graphite", colors: ["#27272a", "#ececee", "#f59e0b"] },
+  { id: "cocoa", name: "Cocoa", colors: ["#4e3d3b", "#f9d8ce", "#e4dbf0"] },
+  { id: "peony", name: "Peony", colors: ["#8a4b5a", "#f9d8ce", "#f3c6d0"] },
+  { id: "lavender", name: "Lavender", colors: ["#54497a", "#e4dbf0", "#d5ddf0"] },
+  { id: "sage", name: "Sage", colors: ["#4d5b3f", "#e1e9d2", "#e8e5ae"] },
+  { id: "sky", name: "Sky", colors: ["#3f4f73", "#d5ddf0", "#e4dbf0"] },
+  { id: "butter", name: "Butter", colors: ["#6b5a24", "#f3e9b8", "#f9d8ce"] },
 ] as const;
 export type PaletteId = (typeof PALETTES)[number]["id"];
-export type Mode = "system" | "light" | "dark";
 
 const KEY = "campusfuel.theme.v1";
+const DEFAULT: PaletteId = "cocoa";
+const isPalette = (v: unknown): v is PaletteId => PALETTES.some((p) => p.id === v);
 
-export function loadTheme(): { palette: PaletteId; mode: Mode } {
+export function loadTheme(): { palette: PaletteId } {
   try {
     const t = JSON.parse(localStorage.getItem(KEY) || "{}");
-    return { palette: t.palette ?? "teal", mode: t.mode ?? "system" };
+    // Older saved themes (teal, berry, dark mode…) fall back to the default.
+    return { palette: isPalette(t.palette) ? t.palette : DEFAULT };
   } catch {
-    return { palette: "teal", mode: "system" };
+    return { palette: DEFAULT };
   }
 }
 
-export function applyTheme(t: { palette: PaletteId; mode: Mode }) {
+export function applyTheme(t: { palette: PaletteId }) {
   const el = document.documentElement;
-  if (t.palette === "teal") el.removeAttribute("data-palette");
+  if (t.palette === DEFAULT) el.removeAttribute("data-palette");
   else el.setAttribute("data-palette", t.palette);
-  if (t.mode === "system") el.removeAttribute("data-theme");
-  else el.setAttribute("data-theme", t.mode);
   try {
     localStorage.setItem(KEY, JSON.stringify(t));
   } catch {
@@ -35,5 +35,5 @@ export function applyTheme(t: { palette: PaletteId; mode: Mode }) {
   }
 }
 
-/** Runs before the page paints so there's no flash of the wrong theme. */
-export const THEME_BOOT_SCRIPT = `try{var t=JSON.parse(localStorage.getItem("${KEY}")||"{}");if(t.palette&&t.palette!=="teal")document.documentElement.setAttribute("data-palette",t.palette);if(t.mode&&t.mode!=="system")document.documentElement.setAttribute("data-theme",t.mode)}catch(e){}`;
+/** Runs before the page paints so there's no flash of the wrong colors. */
+export const THEME_BOOT_SCRIPT = `try{var t=JSON.parse(localStorage.getItem("${KEY}")||"{}");var ok=${JSON.stringify(PALETTES.map((p) => p.id))};if(t.palette&&t.palette!=="${DEFAULT}"&&ok.indexOf(t.palette)>-1)document.documentElement.setAttribute("data-palette",t.palette)}catch(e){}`;

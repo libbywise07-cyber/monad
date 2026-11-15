@@ -211,15 +211,15 @@ export default function AddressInput({ value, lat, lon, onChange }: Props) {
                 {r.kind === "place" ? (
                   <>
                     <span>
-                      📍 {r.place.name ? <b>{r.place.name} · </b> : null}
+                      {r.place.name ? <b>{r.place.name} · </b> : null}
                       {r.place.label}
                     </span>
                     {r.place.distanceMi != null ? <span className="ac-dist">{fmtMi(r.place.distanceMi)}</span> : null}
                   </>
                 ) : r.kind === "more" ? (
-                  <span>🔎 Search more places for “{query}”</span>
+                  <span>Search more places for “{query}”</span>
                 ) : (
-                  <span>✏️ Use “{query}” as typed</span>
+                  <span>Use “{query}” as typed</span>
                 )}
               </li>
             ))}
@@ -233,7 +233,7 @@ export default function AddressInput({ value, lat, lon, onChange }: Props) {
               <span className="spinner" /> Finding you…
             </>
           ) : (
-            "📍 Use my current location"
+            "Use my current location"
           )}
         </button>
         {lat != null && lon != null ? <span className="tag">✓ Location set</span> : null}

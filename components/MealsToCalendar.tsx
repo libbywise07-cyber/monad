@@ -48,7 +48,7 @@ export default function MealsToCalendar({ link, plan, schedule, day }: { link: C
               const end = toHHMM(toMin(m.time) + Math.min(30, Math.max(15, m.windowMin || 30)));
               return (
                 <div key={i} className="cal-ev meal" style={{ top: y(m.time), height: h(m.time, end) }}>
-                  <b>🍽 {m.name}</b> {fmt12(m.time)}
+                  <b>{m.name}</b> {fmt12(m.time)}
                 </div>
               );
             })}

@@ -150,7 +150,7 @@ export default function StoreFinder({ address, lat, lon, auto = false, listTotal
         </div>
       ) : !hasCoords && !auto && !stores ? (
         <button type="button" className="btn sm" onClick={search} disabled={!address.trim()}>
-          🔍 Find stores near this address
+          Find stores near this address
         </button>
       ) : null}
       {refining ? (
@@ -218,10 +218,10 @@ export default function StoreFinder({ address, lat, lon, auto = false, listTotal
                         <div className="muted small">{s.driveMin != null ? `${s.driveMin} min drive` : kind === "straight" ? "straight line" : ""}</div>
                         <div className="row travel-links" onClick={(e) => e.stopPropagation()}>
                           <a href={directionsUrl(s, "transit", { lat, lon, address })} target="_blank" rel="noreferrer" title="Bus directions in Google Maps">
-                            🚌 Bus
+                            Bus
                           </a>
                           <a href={directionsUrl(s, "walking", { lat, lon, address })} target="_blank" rel="noreferrer" title="Walking directions in Google Maps">
-                            🚶 Walk
+                            Walk
                           </a>
                         </div>
                       </td>

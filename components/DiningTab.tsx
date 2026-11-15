@@ -10,9 +10,17 @@ import { DAYS, type MealPlan, type Profile } from "@/lib/types";
 const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 const qs = (s: DiningSchoolRef) => (s.provider === "link" ? `link=${encodeURIComponent(s.url || "")}` : `id=${encodeURIComponent(s.id)}`);
 
-export function diningSummary(p: Profile): string {
+/** True when the student is in college and has a dining plan (swipes and/or points). */
+export function hasMealPlan(p: Profile): boolean {
+  if (p.inCollege === false) return false;
   const d = withDiningDefaults(p.dining);
-  if (d.payment === "none") return p.diningSwipes ? `${p.diningSwipes} swipes/wk` : "No meal plan";
+  return d.payment !== "none" || p.diningSwipes > 0;
+}
+
+export function diningSummary(p: Profile): string {
+  if (p.inCollege === false) return "Not in college";
+  const d = withDiningDefaults(p.dining);
+  if (d.payment === "none") return p.diningSwipes ? `${p.diningSwipes} swipes/wk` : "No meal plan · tap Edit to add one";
   const parts = [d.hall ? `${d.hall.name}, ${d.school?.name}` : d.school?.name || "No school picked"];
   if (usesSwipes(d)) parts.push(`${p.diningSwipes} swipes/wk`);
   if (usesPoints(d)) parts.push(d.balancePeriod === "week" ? `${fmtPoints(d.pointsBalance, d.pointsLabel)}/week` : `${fmtPoints(d.pointsBalance, d.pointsLabel)} left`);
@@ -322,7 +330,7 @@ export default function DiningTab({
                   </div>
                 </div>
                 <span className="tag" style={{ whiteSpace: "nowrap" }}>
-                  {m.dining?.pay === "points" ? `🪙 ${fmtPoints(m.dining.points, label)}` : "🍽️ swipe"}
+                  {m.dining?.pay === "points" ? fmtPoints(m.dining.points, label) : "Meal swipe"}
                 </span>
               </div>
             ))}

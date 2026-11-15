@@ -74,7 +74,7 @@ export default function GroceryList({ plan, profile }: { plan: MealPlan; profile
         <h2 style={{ margin: 0 }}>Grocery list</h2>
         <div className="row noprint" style={{ gap: 6 }}>
           <button type="button" className="btn sm" onClick={copy}>
-            📋 Copy list
+            Copy list
           </button>
           <button type="button" className="btn sm" onClick={() => setHideDone(!hideDone)}>
             {hideDone ? "Show checked" : "Hide checked"}
@@ -100,16 +100,16 @@ export default function GroceryList({ plan, profile }: { plan: MealPlan; profile
             <div className="row small" style={{ gap: 8, marginTop: 6 }}>
               <span className="muted">Get there:</span>
               <a href={directionsUrl(store, "transit", profile)} target="_blank" rel="noreferrer">
-                🚌 Bus
+                Bus
               </a>
               <a href={directionsUrl(store, "walking", profile)} target="_blank" rel="noreferrer">
-                🚶 Walk
+                Walk
               </a>
               <a href={directionsUrl(store, "bicycling", profile)} target="_blank" rel="noreferrer">
-                🚲 Bike
+                Bike
               </a>
               <a href={directionsUrl(store, "driving", profile)} target="_blank" rel="noreferrer">
-                🚗 Drive{store.driveMin ? ` (${store.driveMin} min)` : ""}
+                Drive{store.driveMin ? ` (${store.driveMin} min)` : ""}
               </a>
             </div>
           ) : null}
@@ -131,7 +131,7 @@ export default function GroceryList({ plan, profile }: { plan: MealPlan; profile
           <div style={{ width: `${Math.min(100, (total / profile.weeklyBudget) * 100)}%` }} />
         </div>
         <p className="small muted" style={{ marginTop: 6 }}>
-          {over ? "A bit over budget. Try a cheaper store, more dining hall meals, or swapping a meal or two." : `About $${(profile.weeklyBudget - total).toFixed(2)} under budget 🎉`}{" "}
+          {over ? "A bit over budget. Try a cheaper store, more dining hall meals, or swapping a meal or two." : `About $${(profile.weeklyBudget - total).toFixed(2)} under budget`}{" "}
           {left.length && left.length < plan.groceries.length ? `$${leftCost.toFixed(2)} left to buy. ` : ""}
           Priced by the package you buy; leftovers carry into next week.
         </p>

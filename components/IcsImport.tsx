@@ -48,7 +48,7 @@ export default function IcsImport({ schedule, onChange }: { schedule: ScheduleBl
   return (
     <div className="card stack" style={{ background: "var(--bg)" }}>
       <div>
-        <h3 style={{ margin: 0 }}>📅 Import a calendar file (.ics)</h3>
+        <h3 style={{ margin: 0 }}>Import a calendar file (.ics)</h3>
         <p className="muted small" style={{ margin: "4px 0 0" }}>
           Works with Google Calendar, Outlook, Apple Calendar and Canvas. Your real classes come in without signing in, and the file never leaves your device.
         </p>
@@ -65,7 +65,7 @@ export default function IcsImport({ schedule, onChange }: { schedule: ScheduleBl
       {help ? (
         <ul className="small" style={{ margin: 0, paddingLeft: 18 }}>
           <li>
-            <b>Google Calendar</b> (on a computer): Settings ⚙ → Import &amp; export → <b>Export</b>. Unzip the download and pick your calendar&apos;s .ics file.
+            <b>Google Calendar</b> (on a computer): Settings → Import &amp; export → <b>Export</b>. Unzip the download and pick your calendar&apos;s .ics file.
           </li>
           <li>
             <b>Outlook</b>: Calendar → Share → <b>Publish calendar</b> (or File → Save Calendar on desktop) → download the ICS link.
