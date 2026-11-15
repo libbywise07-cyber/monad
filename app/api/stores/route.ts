@@ -3,61 +3,77 @@ import { geocode, UA } from "@/lib/server/geo";
 
 export const runtime = "nodejs";
 
-// Overpass (OpenStreetMap) mirrors. We ask all of them at once and use whichever answers first.
+// Two free OpenStreetMap sources are queried at the same time:
+//  - Overpass: every grocery/convenience store in a ~3 mile radius (thorough, sometimes slow)
+//  - Nominatim: supermarkets inside the same box (fast, fewer small shops)
+// Results are merged, then real driving distance/time comes from the public OSRM router.
+
+const RADIUS_M = 4800; // ~3 miles
 const OVERPASS = [
   "https://overpass-api.de/api/interpreter",
   "https://overpass.kumi.systems/api/interpreter",
   "https://overpass.private.coffee/api/interpreter",
-  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
 ];
 
-const BUDGET_CHAINS: Record<string, string> = {
-  aldi: "$",
-  lidl: "$",
-  walmart: "$",
-  winco: "$",
-  "food 4 less": "$",
-  "save a lot": "$",
-  "grocery outlet": "$",
-  "trader joe": "$$",
-  target: "$$",
-  kroger: "$$",
-  "fred meyer": "$$",
-  costco: "$ (bulk)",
-  "sam's club": "$ (bulk)",
-  safeway: "$$",
-  albertsons: "$$",
-  publix: "$$",
-  "h-e-b": "$",
-  heb: "$",
-  meijer: "$$",
-  "stop & shop": "$$",
-  "market of choice": "$$$",
-  "whole foods": "$$$",
-  sprouts: "$$",
-  "7-eleven": "$$$ (convenience)",
-  cvs: "$$$ (convenience)",
-  walgreens: "$$$ (convenience)",
-};
+// Price tier per chain. Factor = typical basket cost relative to an average US supermarket.
+const CHAINS: [string, string, number][] = [
+  ["aldi", "$", 0.8],
+  ["lidl", "$", 0.8],
+  ["winco", "$", 0.8],
+  ["grocery outlet", "$", 0.8],
+  ["food 4 less", "$", 0.82],
+  ["save a lot", "$", 0.82],
+  ["walmart", "$", 0.85],
+  ["costco", "$ (bulk)", 0.8],
+  ["sam's club", "$ (bulk)", 0.82],
+  ["h-e-b", "$", 0.88],
+  ["heb", "$", 0.88],
+  ["trader joe", "$$", 0.92],
+  ["fred meyer", "$$", 0.95],
+  ["kroger", "$$", 0.95],
+  ["meijer", "$$", 0.95],
+  ["target", "$$", 1.0],
+  ["safeway", "$$", 1.08],
+  ["albertsons", "$$", 1.08],
+  ["publix", "$$", 1.1],
+  ["stop & shop", "$$", 1.05],
+  ["sprouts", "$$", 1.1],
+  ["natural grocers", "$$$", 1.2],
+  ["market of choice", "$$$", 1.25],
+  ["whole foods", "$$$", 1.25],
+  ["7-eleven", "$$$ (convenience)", 1.45],
+  ["cvs", "$$$ (pharmacy)", 1.4],
+  ["walgreens", "$$$ (pharmacy)", 1.4],
+  ["dollar general", "$", 0.95],
+  ["dollar tree", "$", 0.95],
+];
+
+function price(name: string, type: string) {
+  const n = name.toLowerCase();
+  for (const [k, tier, factor] of CHAINS) if (n.includes(k)) return { tier, factor, known: true };
+  if (type === "convenience") return { tier: "$$$ (convenience)", factor: 1.4, known: false };
+  if (type === "greengrocer") return { tier: "$$", factor: 1.05, known: false };
+  return { tier: "$$", factor: 1.05, known: false };
+}
 
 export interface Store {
   name: string;
   type: string;
   address: string;
-  distanceMi: number;
-  price: string;
   hours: string;
   lat: number;
   lon: number;
+  straightMi: number;
+  distanceMi: number; // driving distance when available, else straight line
+  driveMin: number | null;
+  distanceKind: "drive" | "straight";
+  priceTier: string;
+  priceFactor: number;
+  priceKnown: boolean;
   mapUrl: string;
 }
 
-function priceTier(name: string, shop: string) {
-  const n = name.toLowerCase();
-  for (const [k, v] of Object.entries(BUDGET_CHAINS)) if (n.includes(k)) return v;
-  if (shop === "convenience") return "$$$ (convenience)";
-  return "$$";
-}
+type Raw = { name: string; type: string; address: string; hours: string; lat: number; lon: number };
 
 function haversineMi(a: [number, number], b: [number, number]) {
   const R = 3958.8;
@@ -67,35 +83,92 @@ function haversineMi(a: [number, number], b: [number, number]) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
-type El = { lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
-
-async function overpass(lat: number, lon: number): Promise<El[]> {
-  const q = `[out:json][timeout:12];nwr["shop"~"^(supermarket|grocery|greengrocer|convenience|wholesale)$"](around:4800,${lat},${lon});out center 80;`;
+async function fromOverpass(lat: number, lon: number): Promise<Raw[]> {
+  const q = `[out:json][timeout:8];nwr["shop"~"^(supermarket|grocery|greengrocer|convenience|wholesale)$"]["name"](around:${RADIUS_M},${lat},${lon});out center 80;`;
   const body = "data=" + encodeURIComponent(q);
-  const controllers = OVERPASS.map(() => new AbortController());
-  const attempts = OVERPASS.map(async (url, i) => {
-    const timer = setTimeout(() => controllers[i].abort(), 15000);
-    try {
-      const r = await fetch(url, {
-        method: "POST",
-        headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
-        body,
-        signal: controllers[i].signal,
-      });
-      if (!r.ok) throw new Error(`${r.status}`);
-      const json = (await r.json()) as { elements?: El[] };
-      if (!json.elements) throw new Error("bad response");
-      return json.elements;
-    } finally {
-      clearTimeout(timer);
-    }
-  });
-  const elements = await Promise.any(attempts);
-  controllers.forEach((c) => c.abort()); // cancel the slower mirrors
-  return elements;
+  const ctrls = OVERPASS.map(() => new AbortController());
+  const timer = setTimeout(() => ctrls.forEach((c) => c.abort()), 9000);
+  try {
+    type El = { lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
+    const elements = await Promise.any(
+      OVERPASS.map(async (url, i) => {
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+          signal: ctrls[i].signal,
+        });
+        if (!r.ok) throw new Error(String(r.status));
+        const j = (await r.json()) as { elements?: El[] };
+        if (!j.elements) throw new Error("bad response");
+        return j.elements;
+      }),
+    );
+    return elements.flatMap((e) => {
+      const la = e.lat ?? e.center?.lat;
+      const lo = e.lon ?? e.center?.lon;
+      const t = e.tags || {};
+      if (la == null || lo == null || !t.name) return [];
+      return [
+        {
+          name: t.name,
+          type: t.shop || "supermarket",
+          address: [t["addr:housenumber"], t["addr:street"]].filter(Boolean).join(" "),
+          hours: t.opening_hours || "",
+          lat: la,
+          lon: lo,
+        },
+      ];
+    });
+  } finally {
+    clearTimeout(timer);
+    ctrls.forEach((c) => c.abort());
+  }
 }
 
-// Small in-memory cache so revisiting the Groceries tab is instant.
+async function fromNominatim(lat: number, lon: number): Promise<Raw[]> {
+  const dLat = RADIUS_M / 111_000;
+  const dLon = RADIUS_M / (111_000 * Math.cos((lat * Math.PI) / 180));
+  const viewbox = [lon - dLon, lat + dLat, lon + dLon, lat - dLat].join(",");
+  const url =
+    `https://nominatim.openstreetmap.org/search?format=jsonv2&q=supermarket&limit=40&bounded=1` +
+    `&viewbox=${viewbox}&addressdetails=1&extratags=1`;
+  const r = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "en" }, signal: AbortSignal.timeout(7000) });
+  if (!r.ok) throw new Error(String(r.status));
+  type N = { lat: string; lon: string; name?: string; type?: string; address?: Record<string, string>; extratags?: Record<string, string> };
+  const j = (await r.json()) as N[];
+  return j
+    .filter((x) => x.name)
+    .map((x) => ({
+      name: x.name!,
+      type: x.type || "supermarket",
+      address: [x.address?.house_number, x.address?.road].filter(Boolean).join(" "),
+      hours: x.extratags?.opening_hours || "",
+      lat: +x.lat,
+      lon: +x.lon,
+    }));
+}
+
+/** Driving distance (miles) and time (minutes) from origin to each store via the public OSRM router. */
+async function driving(origin: [number, number], dests: [number, number][]) {
+  if (!dests.length) return null;
+  const coords = [origin, ...dests].map(([la, lo]) => `${lo.toFixed(6)},${la.toFixed(6)}`).join(";");
+  const url = `https://router.project-osrm.org/table/v1/driving/${coords}?sources=0&annotations=distance,duration`;
+  try {
+    const r = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(5000) });
+    if (!r.ok) return null;
+    const j = (await r.json()) as { code: string; distances?: (number | null)[][]; durations?: (number | null)[][] };
+    if (j.code !== "Ok" || !j.distances || !j.durations) return null;
+    return dests.map((_, i) => {
+      const m = j.distances![0][i + 1];
+      const s = j.durations![0][i + 1];
+      return m == null || s == null ? null : { mi: m / 1609.34, min: s / 60 };
+    });
+  } catch {
+    return null;
+  }
+}
+
 const cache = new Map<string, { at: number; data: unknown }>();
 const TTL = 1000 * 60 * 60 * 6;
 
@@ -120,44 +193,64 @@ export async function GET(req: Request) {
     if (hit && Date.now() - hit.at < TTL) return NextResponse.json(hit.data);
 
     const origin: [number, number] = [lat, lon];
-    const elements = await overpass(lat, lon);
+    // Start both. Once the fast source has stores, give the thorough one only a short grace period.
+    const opP = fromOverpass(lat, lon);
+    opP.catch(() => {}); // avoid unhandled rejection if we stop waiting for it
+    const nmList = await fromNominatim(lat, lon).catch(() => null);
+    const grace = new Promise<null>((r) => setTimeout(() => r(null), 2500));
+    const opList = await (nmList?.length ? Promise.race([opP, grace]) : opP).catch(() => null);
+    if (!opList && !nmList) throw new Error("both sources failed");
+    const op = { status: opList ? "fulfilled" : "rejected" };
+    const raw = [...(opList || []), ...(nmList || [])];
 
-    const stores: Store[] = [];
-    for (const e of elements) {
-      const elat = e.lat ?? e.center?.lat;
-      const elon = e.lon ?? e.center?.lon;
-      const t = e.tags || {};
-      if (elat == null || elon == null || !t.name) continue;
-      const shop = t.shop || "store";
-      stores.push({
-        name: t.name,
-        type: shop,
-        address: [t["addr:housenumber"], t["addr:street"], t["addr:city"]].filter(Boolean).join(" "),
-        distanceMi: +haversineMi(origin, [elat, elon]).toFixed(2),
-        price: priceTier(t.name, shop),
-        hours: t.opening_hours || "",
-        lat: elat,
-        lon: elon,
-        mapUrl: `https://www.google.com/maps/dir/?api=1&destination=${elat},${elon}`,
-      });
+    // Merge: same store from both sources = same name within ~150 m. Keep the entry with more detail.
+    const merged: Raw[] = [];
+    for (const s of raw) {
+      const dup = merged.find((m) => m.name.toLowerCase() === s.name.toLowerCase() && haversineMi([m.lat, m.lon], [s.lat, s.lon]) < 0.1);
+      if (!dup) merged.push(s);
+      else {
+        dup.address ||= s.address;
+        dup.hours ||= s.hours;
+      }
     }
 
-    // Grocery stores first (convenience stores count as 1.5 mi farther), one entry per name.
-    const seen = new Set<string>();
-    const unique = stores
-      .sort((a, b) => a.distanceMi + (a.type === "convenience" ? 1.5 : 0) - (b.distanceMi + (b.type === "convenience" ? 1.5 : 0)))
-      .filter((s) => {
-        const k = s.name.toLowerCase();
-        if (seen.has(k)) return false;
-        seen.add(k);
-        return true;
-      })
-      .slice(0, 12);
+    // Closest 15 by straight line (grocery stores before convenience stores), then real driving distance.
+    const near = merged
+      .map((s) => ({ ...s, straightMi: haversineMi(origin, [s.lat, s.lon]) }))
+      .filter((s) => s.straightMi <= 3.5)
+      .sort((a, b) => a.straightMi + (a.type === "convenience" ? 1 : 0) - (b.straightMi + (b.type === "convenience" ? 1 : 0)))
+      .slice(0, 15);
+    const drive = await driving(
+      origin,
+      near.map((s) => [s.lat, s.lon]),
+    );
 
-    const data = { origin: { lat, lon, label }, stores: unique };
-    cache.set(key, { at: Date.now(), data });
+    const stores: Store[] = near.map((s, i) => {
+      const d = drive?.[i];
+      const p = price(s.name, s.type);
+      return {
+        name: s.name,
+        type: s.type,
+        address: s.address,
+        hours: s.hours,
+        lat: s.lat,
+        lon: s.lon,
+        straightMi: +s.straightMi.toFixed(2),
+        distanceMi: +(d ? d.mi : s.straightMi).toFixed(1),
+        driveMin: d ? Math.max(1, Math.round(d.min)) : null,
+        distanceKind: d ? "drive" : "straight",
+        priceTier: p.tier,
+        priceFactor: p.factor,
+        priceKnown: p.known,
+        mapUrl: `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`,
+      };
+    });
+    stores.sort((a, b) => a.distanceMi + (a.type === "convenience" ? 1 : 0) - (b.distanceMi + (b.type === "convenience" ? 1 : 0)));
+
+    const data = { origin: { lat, lon, label }, stores, partial: op.status === "rejected" };
+    if (!data.partial) cache.set(key, { at: Date.now(), data });
     return NextResponse.json(data);
   } catch {
-    return NextResponse.json({ error: "The store map service didn't answer in time. Tap Retry." }, { status: 504 });
+    return NextResponse.json({ error: "The map services didn't answer in time. Tap Retry." }, { status: 504 });
   }
 }

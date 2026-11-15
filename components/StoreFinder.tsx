@@ -5,9 +5,14 @@ interface Store {
   name: string;
   type: string;
   address: string;
-  distanceMi: number;
-  price: string;
   hours: string;
+  distanceMi: number;
+  straightMi: number;
+  driveMin: number | null;
+  distanceKind: "drive" | "straight";
+  priceTier: string;
+  priceFactor: number;
+  priceKnown: boolean;
   mapUrl: string;
 }
 
@@ -17,12 +22,15 @@ interface Props {
   lon?: number;
   /** search automatically whenever a location is available */
   auto?: boolean;
+  /** estimated grocery list total, used to show what the list would cost at each store */
+  listTotal?: number;
 }
 
-export default function StoreFinder({ address, lat, lon, auto = false }: Props) {
+export default function StoreFinder({ address, lat, lon, auto = false, listTotal }: Props) {
   const [stores, setStores] = useState<Store[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [partial, setPartial] = useState(false);
   const ctrlRef = useRef<AbortController | null>(null);
   const hasCoords = lat != null && lon != null;
 
@@ -39,6 +47,7 @@ export default function StoreFinder({ address, lat, lon, auto = false }: Props) 
       const json = await res.json();
       if (!res.ok) throw new Error(json.error);
       setStores(json.stores);
+      setPartial(Boolean(json.partial));
     } catch (e) {
       if ((e as Error).name === "AbortError") return;
       setErr(e instanceof Error && e.message ? e.message : "Store lookup failed.");
@@ -81,35 +90,56 @@ export default function StoreFinder({ address, lat, lon, auto = false }: Props) 
       ) : null}
       {stores && !busy ? (
         stores.length ? (
-          <div style={{ overflowX: "auto" }}>
-            <table>
-              <thead>
-                <tr>
-                  <th>Store</th>
-                  <th>Distance</th>
-                  <th>Price</th>
-                </tr>
-              </thead>
-              <tbody>
-                {stores.map((s) => (
-                  <tr key={s.name + s.distanceMi}>
-                    <td>
-                      <a href={s.mapUrl} target="_blank" rel="noreferrer">
-                        <b>{s.name}</b>
-                      </a>
-                      <div className="muted small">
-                        {s.type}
-                        {s.address ? ` · ${s.address}` : ""}
-                        {s.hours ? ` · ${s.hours}` : ""}
-                      </div>
-                    </td>
-                    <td style={{ whiteSpace: "nowrap" }}>{s.distanceMi} mi</td>
-                    <td>{s.price}</td>
+          <>
+            <div style={{ overflowX: "auto" }}>
+              <table>
+                <thead>
+                  <tr>
+                    <th>Store</th>
+                    <th>Distance</th>
+                    <th>Price</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {stores.map((s) => (
+                    <tr key={s.name + s.straightMi}>
+                      <td>
+                        <a href={s.mapUrl} target="_blank" rel="noreferrer">
+                          <b>{s.name}</b>
+                        </a>
+                        <div className="muted small">
+                          {s.type}
+                          {s.address ? ` · ${s.address}` : ""}
+                          {s.hours ? ` · ${s.hours}` : ""}
+                        </div>
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {s.distanceMi} mi
+                        <div className="muted small">{s.driveMin != null ? `${s.driveMin} min drive` : "straight line"}</div>
+                      </td>
+                      <td style={{ whiteSpace: "nowrap" }}>
+                        {s.priceTier}
+                        {listTotal ? <div className="muted small">your list ≈ ${(listTotal * s.priceFactor).toFixed(0)}</div> : null}
+                        {!s.priceKnown ? <div className="muted small">est.</div> : null}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <p className="muted small" style={{ margin: 0 }}>
+              Distances are driving routes. $ = budget, $$ = mid-range, $$$ = premium, based on each chain&apos;s typical prices.
+              {listTotal ? " List costs are estimates, so check the store's app for exact prices." : ""}
+              {partial ? (
+                <>
+                  {" "}Some small shops may be missing.{" "}
+                  <button type="button" className="btn ghost sm" style={{ padding: 0 }} onClick={search}>
+                    Search again
+                  </button>
+                </>
+              ) : null}
+            </p>
+          </>
         ) : (
           <p className="muted small">
             No grocery stores found within ~3 miles.{" "}

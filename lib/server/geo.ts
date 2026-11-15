@@ -17,9 +17,9 @@ type PhotonFeature = {
   properties: Record<string, string | undefined>;
 };
 
-function photonLabel(p: PhotonFeature["properties"]) {
+function photonLabel(p: PhotonFeature["properties"], includeName = true) {
   const street = [p.housenumber, p.street].filter(Boolean).join(" ");
-  const first = p.name && p.name !== p.street ? p.name : "";
+  const first = includeName && p.name && p.name !== p.street && !(street && p.housenumber) ? p.name : "";
   const parts = [first, street, p.city || p.town || p.village || p.district, p.state, p.postcode];
   const seen = new Set<string>();
   return parts
@@ -36,7 +36,7 @@ export async function suggest(q: string, near?: { lat: number; lon: number }): P
   }
   const res = await fetch(`https://photon.komoot.io/api/?${params}`, {
     headers: { "User-Agent": UA },
-    signal: withTimeout(5000),
+    signal: withTimeout(6000),
   });
   if (!res.ok) throw new Error(`photon ${res.status}`);
   const json = (await res.json()) as { features: PhotonFeature[] };
@@ -69,17 +69,21 @@ export async function reverse(lat: number, lon: number): Promise<Place> {
     });
     const json = (await res.json()) as { features: PhotonFeature[] };
     const f = json.features?.[0];
-    if (f) return { label: photonLabel(f.properties), lat, lon };
+    if (f) return { label: photonLabel(f.properties, false), lat, lon };
   } catch {
     /* fall through */
   }
   try {
-    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}`, {
+    const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&addressdetails=1&lat=${lat}&lon=${lon}`, {
       headers: { "User-Agent": UA, "Accept-Language": "en" },
       signal: withTimeout(6000),
     });
-    const json = (await res.json()) as { display_name?: string };
-    if (json.display_name) return { label: json.display_name, lat, lon };
+    const json = (await res.json()) as { display_name?: string; address?: Record<string, string> };
+    const a = json.address || {};
+    const street = [a.house_number, a.road].filter(Boolean).join(" ");
+    const city = a.city || a.town || a.village || a.suburb;
+    const short = [street, city, [a.state, a.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
+    if (short || json.display_name) return { label: short || json.display_name!, lat, lon };
   } catch {
     /* use coordinates */
   }

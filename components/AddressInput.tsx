@@ -59,6 +59,7 @@ export default function AddressInput({ value, lat, lon, onChange }: Props) {
     return () => {
       clearTimeout(t);
       ctrl.abort();
+      setLoading(false);
     };
     // lat/lon only bias results; don't re-run when they change
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -75,6 +76,7 @@ export default function AddressInput({ value, lat, lon, onChange }: Props) {
 
   const pick = (p: Place) => {
     typed.current = false;
+    setLoading(false);
     onChange(p);
     setOpen(false);
     setResults([]);
