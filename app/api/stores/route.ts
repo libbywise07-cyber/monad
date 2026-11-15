@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { geocode, UA } from "@/lib/server/geo";
+import { approxLocation, geocode, UA } from "@/lib/server/geo";
 
 export const runtime = "nodejs";
 
@@ -182,7 +182,7 @@ export async function GET(req: Request) {
   try {
     if (Number.isNaN(lat) || Number.isNaN(lon)) {
       if (!address) return NextResponse.json({ error: "Enter an address or use your current location." }, { status: 400 });
-      const place = await geocode(address);
+      const place = await geocode(address, (await approxLocation(req)) ?? undefined);
       if (!place)
         return NextResponse.json({ error: "Couldn't find that address. Pick one of the suggestions, or add your city and state." }, { status: 404 });
       ({ lat, lon, label } = place);

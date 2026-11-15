@@ -208,3 +208,9 @@ details summary { cursor: pointer; font-weight: 600; }
 }
 .cal-ev.busy { background: var(--busy); color: var(--busy-ink); right: 42%; white-space: normal; }
 .cal-ev.meal { background: var(--meal-ev); color: var(--meal-ev-ink); border-left: 3px solid var(--brand); left: calc(58% + 4px); z-index: 1; }
+.ac-list li { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+.ac-list li > span:first-child { min-width: 0; }
+.ac-dist { flex: 0 0 auto; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.ac-list li.ac-note { font-size: 12px; color: var(--muted); cursor: default; background: none; padding: 6px 10px 2px; }
+.ac-list li.ac-action { color: var(--brand); font-weight: 600; border-top: 1px solid var(--line); border-radius: 0; }
+.ac-list li.ac-action + li.ac-action { border-top: none; }
