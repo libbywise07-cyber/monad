@@ -185,7 +185,8 @@ function Week({ plan }: { plan: MealPlan }) {
   );
 }
 
-function Groceries({ plan, profile }: { plan: MealPlan; profile: Profile }) {
+function Groceries({ plan, profile, setProfile }: { plan: MealPlan; profile: Profile; setProfile: (p: Profile) => void }) {
+  const best = [...(profile.stores ?? [])].sort((a, b) => a.priceFactor - b.priceFactor || a.distanceMi - b.distanceMi)[0];
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const over = plan.groceryTotal > profile.weeklyBudget;
   const aisles = [...new Set(plan.groceries.map((g) => g.aisle))];
@@ -235,13 +236,27 @@ function Groceries({ plan, profile }: { plan: MealPlan; profile: Profile }) {
         ))}
       </div>
       <div className="card stack noprint">
-        <h2 style={{ margin: 0 }}>Stores near you</h2>
+        <h2 style={{ margin: 0 }}>Your stores</h2>
         {profile.address ? (
           <>
             <p className="muted small" style={{ margin: 0 }}>
               Near {profile.address}
             </p>
-            <StoreFinder address={profile.address} lat={profile.lat} lon={profile.lon} listTotal={plan.groceryTotal} auto />
+            {best ? (
+              <div className="notice small">
+                Cheapest of your stores for this list: <b>{best.name}</b>, about ${(plan.groceryTotal * best.priceFactor).toFixed(0)}
+                {best.distanceMi ? ` · ${best.distanceMi} mi` : ""}
+              </div>
+            ) : null}
+            <StoreFinder
+              address={profile.address}
+              lat={profile.lat}
+              lon={profile.lon}
+              listTotal={plan.groceryTotal}
+              auto
+              selected={profile.stores ?? []}
+              onSelectedChange={(stores) => setProfile({ ...profile, stores })}
+            />
           </>
         ) : (
           <p className="muted">
@@ -262,7 +277,7 @@ function ProfileTab({ profile }: { profile: Profile }) {
     ["Kitchen", `${profile.housing} · ${profile.appliances.join(", ") || "no appliances"} · skill ${profile.skill}/3 · ${profile.diningSwipes} swipes/wk`, 3],
     ["Calendar", profile.calendar ? `Connected to ${profile.calendar.provider === "google" ? "Google Calendar" : "Outlook"} (${profile.calendar.account})` : "Not connected", 4],
     ["Schedule", `${profile.schedule.length} blocks · weekdays ${fmt12(profile.wakeWeekday)}–${fmt12(profile.sleepWeekday)}`, 4],
-    ["Budget", `$${profile.weeklyBudget}/week · ${profile.address || "no address"}`, 5],
+    ["Budget", `$${profile.weeklyBudget}/week · ${profile.address || "no address"} · ${profile.stores?.length ?? 0} saved store${profile.stores?.length === 1 ? "" : "s"}`, 5],
     ["Pantry", `${profile.pantry.length} items`, 6],
   ];
   return (
@@ -381,7 +396,7 @@ export default function Dashboard() {
         <>
           {tab === "today" && <Today plan={plan} profile={profile} day={day} setDay={setDay} />}
           {tab === "week" && <Week plan={plan} />}
-          {tab === "groceries" && <Groceries plan={plan} profile={profile} />}
+          {tab === "groceries" && <Groceries plan={plan} profile={profile} setProfile={setProfile} />}
           {tab === "pantry" && (
             <div className="card stack">
               <h2>Your pantry</h2>

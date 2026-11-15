@@ -5,10 +5,13 @@
 //  - ipwho.is / ipapi.co: approximate city from the internet connection, used to rank nearby
 //    results first and as a fallback when the browser can't share an exact location.
 
+import { displayName, formatAddress, type AddressParts } from "@/lib/address";
+
 export const UA = "CampusFuel/0.1 (student meal planner demo)";
 
 export interface Place {
-  label: string;
+  label: string; // mailing format: "1514 SE Nehalem St, Portland, OR 97202"
+  name?: string; // building or business name, when it adds information
   lat: number;
   lon: number;
   distanceMi?: number;
@@ -92,15 +95,21 @@ type PhotonFeature = {
   properties: Record<string, string | undefined>;
 };
 
-function photonLabel(p: PhotonFeature["properties"], includeName = true) {
-  const street = [p.housenumber, p.street].filter(Boolean).join(" ");
-  const first = includeName && p.name && p.name !== p.street ? p.name : "";
-  const parts = [first, street, p.city || p.town || p.village || p.district, p.state, p.postcode];
-  const seen = new Set<string>();
-  return parts
-    .filter((x): x is string => Boolean(x))
-    .filter((x) => (seen.has(x) ? false : (seen.add(x), true)))
-    .join(", ");
+function photonParts(p: PhotonFeature["properties"]): AddressParts {
+  return {
+    name: p.name,
+    houseNumber: p.housenumber,
+    street: p.street,
+    city: p.city || p.town || p.village || p.locality || p.district,
+    state: p.state,
+    postcode: p.postcode,
+    countryCode: p.countrycode,
+  };
+}
+
+function photonPlace(f: PhotonFeature): Place {
+  const parts = photonParts(f.properties);
+  return { label: formatAddress(parts), name: displayName(parts), lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] };
 }
 
 async function photon(q: string, near?: Near, limit = 10): Promise<Place[]> {
@@ -114,20 +123,24 @@ async function photon(q: string, near?: Near, limit = 10): Promise<Place[]> {
   const res = await fetch(`https://photon.komoot.io/api/?${params}`, { headers: { "User-Agent": UA }, signal: withTimeout(6000) });
   if (!res.ok) throw new Error(`photon ${res.status}`);
   const json = (await res.json()) as { features: PhotonFeature[] };
-  return json.features
-    .map((f) => ({ label: photonLabel(f.properties), lat: f.geometry.coordinates[1], lon: f.geometry.coordinates[0] }))
-    .filter((p) => p.label);
+  return json.features.map(photonPlace).filter((p) => p.label);
 }
 
 // ---------- Nominatim ----------
 type NomResult = { lat: string; lon: string; name?: string; display_name: string; address?: Record<string, string> };
 
-function nominatimLabel(r: NomResult) {
+function nominatimParts(r: NomResult): AddressParts {
   const a = r.address || {};
-  const street = [a.house_number, a.road].filter(Boolean).join(" ");
-  const city = a.city || a.town || a.village || a.suburb;
-  const parts = [r.name && r.name !== a.road ? r.name : "", street, city, [a.state, a.postcode].filter(Boolean).join(" ")].filter(Boolean);
-  return parts.length >= 2 ? parts.join(", ") : r.display_name;
+  return {
+    name: r.name,
+    houseNumber: a.house_number,
+    street: a.road,
+    city: a.city || a.town || a.village || a.hamlet || a.suburb,
+    state: a.state,
+    stateIso: a["ISO3166-2-lvl4"],
+    postcode: a.postcode,
+    countryCode: a.country_code,
+  };
 }
 
 async function nominatim(q: string, near?: Near, limit = 8): Promise<Place[]> {
@@ -144,7 +157,10 @@ async function nominatim(q: string, near?: Near, limit = 8): Promise<Place[]> {
   });
   if (!res.ok) throw new Error(`nominatim ${res.status}`);
   const json = (await res.json()) as NomResult[];
-  return json.map((r) => ({ label: nominatimLabel(r), lat: +r.lat, lon: +r.lon }));
+  return json.map((r) => {
+    const parts = nominatimParts(r);
+    return { label: formatAddress(parts) || r.display_name, name: displayName(parts), lat: +r.lat, lon: +r.lon };
+  });
 }
 
 // ---------- public API ----------
@@ -178,7 +194,10 @@ export async function reverse(lat: number, lon: number): Promise<Place> {
     });
     const json = (await res.json()) as { features: PhotonFeature[] };
     const f = json.features?.[0];
-    if (f) return { label: photonLabel(f.properties, false), lat, lon };
+    if (f) {
+      const label = formatAddress({ ...photonParts(f.properties), name: undefined });
+      if (label) return { label, lat, lon };
+    }
   } catch {
     /* fall through */
   }
@@ -187,12 +206,9 @@ export async function reverse(lat: number, lon: number): Promise<Place> {
       headers: { "User-Agent": UA, "Accept-Language": "en" },
       signal: withTimeout(6000),
     });
-    const json = (await res.json()) as { display_name?: string; address?: Record<string, string> };
-    const a = json.address || {};
-    const street = [a.house_number, a.road].filter(Boolean).join(" ");
-    const city = a.city || a.town || a.village || a.suburb;
-    const short = [street, city, [a.state, a.postcode].filter(Boolean).join(" ")].filter(Boolean).join(", ");
-    if (short || json.display_name) return { label: short || json.display_name!, lat, lon };
+    const json = (await res.json()) as NomResult;
+    const label = json.address ? formatAddress({ ...nominatimParts(json), name: undefined }) : json.display_name;
+    if (label) return { label, lat, lon };
   } catch {
     /* use coordinates */
   }

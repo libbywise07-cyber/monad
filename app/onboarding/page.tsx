@@ -341,7 +341,7 @@ export default function Onboarding() {
               />
               <p className="muted small">Only used to find grocery stores near you.</p>
             </div>
-            <StoreFinder address={p.address} lat={p.lat} lon={p.lon} />
+            <StoreFinder address={p.address} lat={p.lat} lon={p.lon} selected={p.stores ?? []} onSelectedChange={(stores) => up("stores", stores)} />
           </>
         )}
 

@@ -14,7 +14,7 @@ interface Props {
   onChange: (p: PickedPlace) => void;
 }
 
-type Place = { label: string; lat: number; lon: number; distanceMi?: number };
+type Place = { label: string; name?: string; lat: number; lon: number; distanceMi?: number };
 type Row = { kind: "place"; place: Place } | { kind: "more" } | { kind: "typed" };
 
 const fmtMi = (d?: number) => (d == null ? "" : d < 0.1 ? "here" : d < 10 ? `${d.toFixed(1)} mi` : `${Math.round(d)} mi`);
@@ -210,7 +210,10 @@ export default function AddressInput({ value, lat, lon, onChange }: Props) {
               >
                 {r.kind === "place" ? (
                   <>
-                    <span>📍 {r.place.label}</span>
+                    <span>
+                      📍 {r.place.name ? <b>{r.place.name} · </b> : null}
+                      {r.place.label}
+                    </span>
                     {r.place.distanceMi != null ? <span className="ac-dist">{fmtMi(r.place.distanceMi)}</span> : null}
                   </>
                 ) : r.kind === "more" ? (

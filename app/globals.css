@@ -214,3 +214,6 @@ details summary { cursor: pointer; font-weight: 600; }
 .ac-list li.ac-note { font-size: 12px; color: var(--muted); cursor: default; background: none; padding: 6px 10px 2px; }
 .ac-list li.ac-action { color: var(--brand); font-weight: 600; border-top: 1px solid var(--line); border-radius: 0; }
 .ac-list li.ac-action + li.ac-action { border-top: none; }
+table.stores tr.picked td { background: var(--brand-soft); }
+table.stores tr.picked td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
+table.stores tr.picked td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }

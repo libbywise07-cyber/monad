@@ -101,6 +101,7 @@ export interface Profile {
   lat?: number; // set when the address is picked from suggestions or current location
   lon?: number;
   calendar?: CalendarLink;
+  stores?: SavedStore[]; // up to 10 stores the student shops at
   pantry: PantryItem[];
 }
 
@@ -163,4 +164,20 @@ export interface FreeWindow {
   start: string;
   end: string;
   minutes: number;
+}
+
+export const MAX_STORES = 10;
+
+export interface SavedStore {
+  id: string; // stable key: name + rounded coordinates
+  name: string;
+  type: string;
+  address: string;
+  lat: number;
+  lon: number;
+  distanceMi: number;
+  driveMin: number | null;
+  priceTier: string;
+  priceFactor: number;
+  priceKnown: boolean;
 }

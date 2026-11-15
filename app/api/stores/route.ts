@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { approxLocation, geocode, UA } from "@/lib/server/geo";
+import { formatAddress } from "@/lib/address";
 
 export const runtime = "nodejs";
 
@@ -57,6 +58,7 @@ function price(name: string, type: string) {
 }
 
 export interface Store {
+  id: string;
   name: string;
   type: string;
   address: string;
@@ -113,7 +115,15 @@ async function fromOverpass(lat: number, lon: number): Promise<Raw[]> {
         {
           name: t.name,
           type: t.shop || "supermarket",
-          address: [t["addr:housenumber"], t["addr:street"]].filter(Boolean).join(" "),
+          address: t["addr:street"]
+            ? formatAddress({
+                houseNumber: t["addr:housenumber"],
+                street: t["addr:street"],
+                city: t["addr:city"],
+                state: t["addr:state"],
+                postcode: t["addr:postcode"],
+              })
+            : "",
           hours: t.opening_hours || "",
           lat: la,
           lon: lo,
@@ -133,20 +143,33 @@ async function fromNominatim(lat: number, lon: number): Promise<Raw[]> {
   const url =
     `https://nominatim.openstreetmap.org/search?format=jsonv2&q=supermarket&limit=40&bounded=1` +
     `&viewbox=${viewbox}&addressdetails=1&extratags=1`;
-  const r = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "en" }, signal: AbortSignal.timeout(7000) });
+  const r = await fetch(url, { headers: { "User-Agent": UA, "Accept-Language": "en" }, signal: AbortSignal.timeout(6000) });
   if (!r.ok) throw new Error(String(r.status));
   type N = { lat: string; lon: string; name?: string; type?: string; address?: Record<string, string>; extratags?: Record<string, string> };
   const j = (await r.json()) as N[];
   return j
     .filter((x) => x.name)
-    .map((x) => ({
-      name: x.name!,
-      type: x.type || "supermarket",
-      address: [x.address?.house_number, x.address?.road].filter(Boolean).join(" "),
-      hours: x.extratags?.opening_hours || "",
-      lat: +x.lat,
-      lon: +x.lon,
-    }));
+    .map((x) => {
+      const a = x.address || {};
+      return {
+        name: x.name!,
+        type: x.type || "supermarket",
+        address: a.road
+          ? formatAddress({
+              houseNumber: a.house_number,
+              street: a.road,
+              city: a.city || a.town || a.village,
+              stateIso: a["ISO3166-2-lvl4"],
+              state: a.state,
+              postcode: a.postcode,
+              countryCode: a.country_code,
+            })
+          : "",
+        hours: x.extratags?.opening_hours || "",
+        lat: +x.lat,
+        lon: +x.lon,
+      };
+    });
 }
 
 /** Driving distance (miles) and time (minutes) from origin to each store via the public OSRM router. */
@@ -155,7 +178,7 @@ async function driving(origin: [number, number], dests: [number, number][]) {
   const coords = [origin, ...dests].map(([la, lo]) => `${lo.toFixed(6)},${la.toFixed(6)}`).join(";");
   const url = `https://router.project-osrm.org/table/v1/driving/${coords}?sources=0&annotations=distance,duration`;
   try {
-    const r = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(5000) });
+    const r = await fetch(url, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(4000) });
     if (!r.ok) return null;
     const j = (await r.json()) as { code: string; distances?: (number | null)[][]; durations?: (number | null)[][] };
     if (j.code !== "Ok" || !j.distances || !j.durations) return null;
@@ -169,11 +192,94 @@ async function driving(origin: [number, number], dests: [number, number][]) {
   }
 }
 
-const cache = new Map<string, { at: number; data: unknown }>();
-const TTL = 1000 * 60 * 60 * 6;
+function merge(lists: Raw[][]): Raw[] {
+  const merged: Raw[] = [];
+  for (const s of lists.flat()) {
+    const dup = merged.find((m) => m.name.toLowerCase() === s.name.toLowerCase() && haversineMi([m.lat, m.lon], [s.lat, s.lon]) < 0.1);
+    if (!dup) merged.push({ ...s });
+    else {
+      dup.address ||= s.address;
+      dup.hours ||= s.hours;
+    }
+  }
+  return merged;
+}
 
+const penalty = (type: string) => (type === "convenience" ? 1 : 0); // grocery stores before convenience stores
+
+function build(origin: [number, number], raw: Raw[], drive: ({ mi: number; min: number } | null)[] | null): Store[] {
+  return raw
+    .map((s, i) => {
+      const d = drive?.[i];
+      const p = price(s.name, s.type);
+      const straight = haversineMi(origin, [s.lat, s.lon]);
+      return {
+        id: `${s.name.toLowerCase()}@${s.lat.toFixed(4)},${s.lon.toFixed(4)}`,
+        name: s.name,
+        type: s.type,
+        address: s.address,
+        hours: s.hours,
+        lat: s.lat,
+        lon: s.lon,
+        straightMi: +straight.toFixed(2),
+        distanceMi: +(d ? d.mi : straight).toFixed(1),
+        driveMin: d ? Math.max(1, Math.round(d.min)) : null,
+        distanceKind: d ? ("drive" as const) : ("straight" as const),
+        priceTier: p.tier,
+        priceFactor: p.factor,
+        priceKnown: p.known,
+        mapUrl: `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`,
+      };
+    })
+    .sort((a, b) => a.distanceMi + penalty(a.type) - (b.distanceMi + penalty(b.type)));
+}
+
+function nearest(origin: [number, number], raw: Raw[], n = 20) {
+  return raw
+    .map((s) => ({ s, d: haversineMi(origin, [s.lat, s.lon]) }))
+    .filter((x) => x.d <= 3.5)
+    .sort((a, b) => a.d + penalty(a.s.type) - (b.d + penalty(b.s.type)))
+    .slice(0, n)
+    .map((x) => x.s);
+}
+
+// Caches: finished results (6h) and in-flight full searches, so the fast and full requests share work.
+const TTL = 1000 * 60 * 60 * 6;
+const done = new Map<string, { at: number; data: unknown }>();
+const nomCache = new Map<string, Promise<Raw[]>>();
+const fullInFlight = new Map<string, Promise<unknown>>();
+
+function nominatimFor(key: string, lat: number, lon: number) {
+  let p = nomCache.get(key);
+  if (!p) {
+    p = fromNominatim(lat, lon);
+    nomCache.set(key, p);
+    p.catch(() => nomCache.delete(key));
+    setTimeout(() => nomCache.delete(key), TTL);
+  }
+  return p;
+}
+
+async function fullSearch(key: string, lat: number, lon: number, label: string) {
+  const origin: [number, number] = [lat, lon];
+  const [op, nm] = await Promise.allSettled([fromOverpass(lat, lon), nominatimFor(key, lat, lon)]);
+  if (op.status === "rejected" && nm.status === "rejected") throw new Error("both sources failed");
+  const near = nearest(origin, merge([op.status === "fulfilled" ? op.value : [], nm.status === "fulfilled" ? nm.value : []]));
+  const drive = await driving(
+    origin,
+    near.map((s) => [s.lat, s.lon]),
+  );
+  const data = { origin: { lat, lon, label }, stores: build(origin, near, drive), complete: true, partial: op.status === "rejected" };
+  if (!data.partial) done.set(key, { at: Date.now(), data });
+  return data;
+}
+
+// GET /api/stores?lat=..&lon=..&mode=fast   first answer in ~1–3 s (one source, straight-line distance)
+// GET /api/stores?lat=..&lon=..&mode=full   both sources + driving distances (cached 6 h)
+// address=... can replace lat/lon.
 export async function GET(req: Request) {
   const sp = new URL(req.url).searchParams;
+  const mode = sp.get("mode") === "fast" ? "fast" : "full";
   const address = sp.get("address")?.trim() || "";
   let lat = sp.get("lat") ? Number(sp.get("lat")) : NaN;
   let lon = sp.get("lon") ? Number(sp.get("lon")) : NaN;
@@ -189,66 +295,26 @@ export async function GET(req: Request) {
     }
 
     const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
-    const hit = cache.get(key);
+    const hit = done.get(key);
     if (hit && Date.now() - hit.at < TTL) return NextResponse.json(hit.data);
 
-    const origin: [number, number] = [lat, lon];
-    // Start both. Once the fast source has stores, give the thorough one only a short grace period.
-    const opP = fromOverpass(lat, lon);
-    opP.catch(() => {}); // avoid unhandled rejection if we stop waiting for it
-    const nmList = await fromNominatim(lat, lon).catch(() => null);
-    const grace = new Promise<null>((r) => setTimeout(() => r(null), 2500));
-    const opList = await (nmList?.length ? Promise.race([opP, grace]) : opP).catch(() => null);
-    if (!opList && !nmList) throw new Error("both sources failed");
-    const op = { status: opList ? "fulfilled" : "rejected" };
-    const raw = [...(opList || []), ...(nmList || [])];
-
-    // Merge: same store from both sources = same name within ~150 m. Keep the entry with more detail.
-    const merged: Raw[] = [];
-    for (const s of raw) {
-      const dup = merged.find((m) => m.name.toLowerCase() === s.name.toLowerCase() && haversineMi([m.lat, m.lon], [s.lat, s.lon]) < 0.1);
-      if (!dup) merged.push(s);
-      else {
-        dup.address ||= s.address;
-        dup.hours ||= s.hours;
-      }
+    // Start (or join) the full search in the background either way.
+    let full = fullInFlight.get(key);
+    if (!full) {
+      full = fullSearch(key, lat, lon, label).finally(() => fullInFlight.delete(key));
+      fullInFlight.set(key, full);
+      full.catch(() => {});
     }
 
-    // Closest 15 by straight line (grocery stores before convenience stores), then real driving distance.
-    const near = merged
-      .map((s) => ({ ...s, straightMi: haversineMi(origin, [s.lat, s.lon]) }))
-      .filter((s) => s.straightMi <= 3.5)
-      .sort((a, b) => a.straightMi + (a.type === "convenience" ? 1 : 0) - (b.straightMi + (b.type === "convenience" ? 1 : 0)))
-      .slice(0, 15);
-    const drive = await driving(
-      origin,
-      near.map((s) => [s.lat, s.lon]),
-    );
+    if (mode === "full") return NextResponse.json(await full);
 
-    const stores: Store[] = near.map((s, i) => {
-      const d = drive?.[i];
-      const p = price(s.name, s.type);
-      return {
-        name: s.name,
-        type: s.type,
-        address: s.address,
-        hours: s.hours,
-        lat: s.lat,
-        lon: s.lon,
-        straightMi: +s.straightMi.toFixed(2),
-        distanceMi: +(d ? d.mi : s.straightMi).toFixed(1),
-        driveMin: d ? Math.max(1, Math.round(d.min)) : null,
-        distanceKind: d ? "drive" : "straight",
-        priceTier: p.tier,
-        priceFactor: p.factor,
-        priceKnown: p.known,
-        mapUrl: `https://www.google.com/maps/dir/?api=1&destination=${s.lat},${s.lon}`,
-      };
+    // Fast: whichever arrives first — Nominatim's supermarkets, or the finished full search.
+    const origin: [number, number] = [lat, lon];
+    const fast = nominatimFor(key, lat, lon).then((raw) => {
+      if (!raw.length) throw new Error("empty");
+      return { origin: { lat, lon, label }, stores: build(origin, nearest(origin, raw), null), complete: false };
     });
-    stores.sort((a, b) => a.distanceMi + (a.type === "convenience" ? 1 : 0) - (b.distanceMi + (b.type === "convenience" ? 1 : 0)));
-
-    const data = { origin: { lat, lon, label }, stores, partial: op.status === "rejected" };
-    if (!data.partial) cache.set(key, { at: Date.now(), data });
+    const data = await Promise.any([fast, full]);
     return NextResponse.json(data);
   } catch {
     return NextResponse.json({ error: "The map services didn't answer in time. Tap Retry." }, { status: 504 });
