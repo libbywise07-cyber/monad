@@ -8,6 +8,8 @@ import StoreFinder from "@/components/StoreFinder";
 import AddressInput from "@/components/AddressInput";
 import CalendarConnect from "@/components/CalendarConnect";
 import DiningSetupEditor from "@/components/DiningSetupEditor";
+import ActivityEditor from "@/components/ActivityEditor";
+import NutritionExplainer from "@/components/NutritionExplainer";
 import { DEFAULT_PROFILE, loadProfile, requestPlan, saveProfile, savePlan } from "@/lib/store";
 import { nutritionTargets } from "@/lib/planner";
 import {
@@ -25,7 +27,7 @@ import {
   type Skill,
 } from "@/lib/types";
 
-const STEPS = ["About you", "Goals", "Diet", "Kitchen", "Dining", "Schedule", "Budget & location", "Pantry"];
+const STEPS = ["About you", "Activity", "Goals", "Diet", "Kitchen", "Dining", "Schedule", "Budget & location", "Pantry"];
 
 const HEALTH_GOALS = [
   "More energy for class",
@@ -177,6 +179,16 @@ export default function Onboarding() {
 
         {step === 1 && (
           <>
+            <h2>How do you move?</h2>
+            <p className="muted">
+              Your everyday walking and your workouts set how much fuel you need. Training days get more food, rest days a bit less.
+            </p>
+            <ActivityEditor profile={p} onChange={(patch) => setP((x) => ({ ...x, ...patch }))} />
+          </>
+        )}
+
+        {step === 2 && (
+          <>
             <h2>What are you going for?</h2>
             <div className="option-grid">
               {(
@@ -225,10 +237,11 @@ export default function Onboarding() {
                 ))}
               </div>
             </div>
+            <NutritionExplainer profile={p} />
           </>
         )}
 
-        {step === 2 && (
+        {step === 3 && (
           <>
             <h2>Dietary restrictions</h2>
             <label>Eating style</label>
@@ -257,7 +270,7 @@ export default function Onboarding() {
           </>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <>
             <h2>Where do you live and cook?</h2>
             <div className="option-grid">
@@ -306,7 +319,7 @@ export default function Onboarding() {
           </>
         )}
 
-        {step === 4 && (
+        {step === 5 && (
           <>
             <h2>Your dining hall</h2>
             {p.inCollege ? (
@@ -328,7 +341,7 @@ export default function Onboarding() {
           </>
         )}
 
-        {step === 5 && (
+        {step === 6 && (
           <>
             <h2>Your weekly schedule</h2>
             <p className="muted">We only schedule meals in your free time. Add every class, shift, practice and study block.</p>
@@ -349,12 +362,17 @@ export default function Onboarding() {
                 </div>
               </div>
             </div>
+            <div>
+              <label htmlFor="travel">Usual time to get to class or work: {p.travelMin ?? 10} min each way</label>
+              <input id="travel" type="range" min={0} max={45} step={5} value={p.travelMin ?? 10} onChange={(e) => up("travelMin", +e.target.value)} />
+              <p className="muted small">We won&apos;t plan meals while you&apos;re walking or on the bus. You can set a different time for each block below.</p>
+            </div>
             <h3 style={{ marginBottom: 0 }}>Or add blocks yourself</h3>
-            <ScheduleEditor value={p.schedule} onChange={(v) => up("schedule", v)} />
+            <ScheduleEditor value={p.schedule} onChange={(v) => up("schedule", v)} travelDefault={p.travelMin ?? 10} />
           </>
         )}
 
-        {step === 6 && (
+        {step === 7 && (
           <>
             <h2>Budget & location</h2>
             <div>
@@ -376,7 +394,7 @@ export default function Onboarding() {
           </>
         )}
 
-        {step === 7 && (
+        {step === 8 && (
           <>
             <h2>What&apos;s already in your kitchen?</h2>
             <p className="muted">We plan around what you have so you buy less and waste less.</p>
@@ -393,6 +411,11 @@ export default function Onboarding() {
             {editing && step < STEPS.length - 1 ? (
               <button type="button" className="btn" onClick={finish} disabled={busy || !canNext}>
                 Save & rebuild plan
+              </button>
+            ) : null}
+            {step > 0 && step < STEPS.length - 1 ? (
+              <button type="button" className="btn ghost" onClick={() => setStep((s) => s + 1)} disabled={busy}>
+                Skip for now
               </button>
             ) : null}
             {step < STEPS.length - 1 ? (

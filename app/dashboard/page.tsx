@@ -4,12 +4,15 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
+import NutritionExplainer from "@/components/NutritionExplainer";
+import ThemePicker from "@/components/ThemePicker";
 import MealsToCalendar from "@/components/MealsToCalendar";
 import { ProviderMark } from "@/components/CalendarConnect";
+import MealFeedback, { REASON_LABEL, type Feedback } from "@/components/MealFeedback";
 import DiningTab, { diningSummary } from "@/components/DiningTab";
 import { fmtPoints } from "@/lib/dining/budget";
 import { requestPlan, resetAll, useStored } from "@/lib/store";
-import { fmt12, freeTimeLabel, nextBusy, toMin } from "@/lib/planner";
+import { fmt12, freeTimeLabel, nextBusy, STEP_LABEL, swapMeal, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type Macros, type MealPlan, type PlannedMeal, type Profile } from "@/lib/types";
 
 type Tab = "today" | "week" | "dining" | "groceries" | "pantry" | "profile";
@@ -41,7 +44,19 @@ function Macrosline({ m }: { m: Macros }) {
   );
 }
 
-function MealCard({ m, pointsLabel, next }: { m: PlannedMeal; pointsLabel: string; next?: { label: string; start: string } }) {
+function MealCard({
+  m,
+  pointsLabel,
+  next,
+  onSwap,
+  onHide,
+}: {
+  m: PlannedMeal;
+  pointsLabel: string;
+  next?: { label: string; start: string };
+  onSwap?: () => void;
+  onHide?: () => void;
+}) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`card tl-meal ${m.type === "snack" ? "snack" : ""}`} style={{ padding: 14 }}>
@@ -67,9 +82,21 @@ function MealCard({ m, pointsLabel, next }: { m: PlannedMeal; pointsLabel: strin
         {m.why}
       </p>
       {m.usesPantry.length ? <p className="small muted" style={{ margin: "4px 0 0" }}>✅ From your pantry: {m.usesPantry.join(", ")}</p> : null}
-      <button type="button" className="btn ghost sm" style={{ paddingLeft: 0, marginTop: 4 }} onClick={() => setOpen(!open)}>
-        {m.dining?.items.length ? (open ? "Hide plate ▲" : `What to get at ${m.dining.hall} ▼`) : open ? "Hide recipe ▲" : "Show recipe ▼"}
-      </button>
+      <div className="row meal-actions">
+        <button type="button" className="btn ghost sm" style={{ paddingLeft: 0 }} onClick={() => setOpen(!open)}>
+          {m.dining?.items.length ? (open ? "Hide plate ▲" : `What to get at ${m.dining.hall} ▼`) : open ? "Hide recipe ▲" : "Show recipe ▼"}
+        </button>
+        {onSwap ? (
+          <button type="button" className="btn sm" onClick={onSwap}>
+            ↻ New meal
+          </button>
+        ) : null}
+        {onHide ? (
+          <button type="button" className="btn ghost sm" onClick={onHide}>
+            🚫 Don&apos;t show again
+          </button>
+        ) : null}
+      </div>
       {open ? (
         <div className="grid g2 small">
           {m.ingredients.length ? (
@@ -98,8 +125,51 @@ function MealCard({ m, pointsLabel, next }: { m: PlannedMeal; pointsLabel: strin
   );
 }
 
-function Today({ plan, profile, day, setDay }: { plan: MealPlan; profile: Profile; day: DayIndex; setDay: (d: DayIndex) => void }) {
+function Today({
+  plan,
+  profile,
+  day,
+  setDay,
+  setPlan,
+  setProfile,
+}: {
+  plan: MealPlan;
+  profile: Profile;
+  day: DayIndex;
+  setDay: (d: DayIndex) => void;
+  setPlan: (p: MealPlan) => void;
+  setProfile: (p: Profile) => void;
+}) {
   const dp = plan.days.find((d) => d.day === day);
+  const dayIdx = plan.days.findIndex((d) => d.day === day);
+  const [hiding, setHiding] = useState<PlannedMeal | null>(null);
+  const [toast, setToast] = useState("");
+  const baseName = (m: PlannedMeal) => m.name.replace(/ \(×.*\)$/, "");
+
+  const swap = (m: PlannedMeal, prof: Profile = profile, exclude: string[] = []) => {
+    if (!dp) return;
+    const next = swapMeal(prof, plan, dayIdx, dp.meals.indexOf(m), [baseName(m), ...exclude]);
+    if (next) {
+      setPlan(next);
+      setToast(`Swapped in ${next.days[dayIdx].meals[dp.meals.indexOf(m)].name}.`);
+    } else setToast("No other meal fits this time slot with your settings.");
+  };
+
+  const hide = (m: PlannedMeal, f: Feedback) => {
+    const name = baseName(m);
+    const reason = f.reason === "ingredient" ? `doesn't like ${f.ingredients.join(", ")}` : f.reason === "other" && f.note ? f.note : REASON_LABEL[f.reason];
+    const next: Profile = {
+      ...profile,
+      blockedMeals: [...(profile.blockedMeals ?? []).filter((x) => x.name !== name), { name, reason }],
+      dislikes: f.reason === "ingredient" ? [profile.dislikes, ...f.ingredients].filter(Boolean).join(", ") : profile.dislikes,
+      preferQuick: profile.preferQuick || f.reason === "too-long",
+      preferFilling: profile.preferFilling || f.reason === "not-filling",
+    };
+    setProfile(next);
+    setHiding(null);
+    swap(m, next);
+    setToast(`Got it. We won't suggest ${name} again${f.reason === "ingredient" ? ` or anything with ${f.ingredients.join(", ")}` : ""}.`);
+  };
   const items = useMemo(() => {
     const busy = profile.schedule
       .filter((b) => b.days.includes(day))
@@ -124,14 +194,30 @@ function Today({ plan, profile, day, setDay }: { plan: MealPlan; profile: Profil
           </button>
         ))}
       </div>
-      {dp ? (
-        <div className="card grid g2">
-          <MacroBar label="Calories" val={dp.totals.kcal} target={plan.targets.kcal} unit="" />
-          <MacroBar label="Protein" val={dp.totals.protein} target={plan.targets.protein} />
-          <MacroBar label="Carbs" val={dp.totals.carbs} target={plan.targets.carbs} />
-          <MacroBar label="Fat" val={dp.totals.fat} target={plan.targets.fat} />
+      {toast ? (
+        <div className="notice small row between" role="status">
+          <span>{toast}</span>
+          <button type="button" className="btn ghost sm" onClick={() => setToast("")} aria-label="Dismiss">
+            ✕
+          </button>
         </div>
       ) : null}
+      {dp ? (
+        <div className="card stack">
+          {dp.burn?.kcal ? (
+            <div className="small">
+              🏋️ <b>Workout day:</b> +{dp.burn.kcal} kcal for {dp.burn.what.join(", ")}
+            </div>
+          ) : null}
+          <div className="grid g2">
+            <MacroBar label="Calories" val={dp.totals.kcal} target={(dp.target ?? plan.targets).kcal} unit="" />
+            <MacroBar label="Protein" val={dp.totals.protein} target={(dp.target ?? plan.targets).protein} />
+            <MacroBar label="Carbs" val={dp.totals.carbs} target={(dp.target ?? plan.targets).carbs} />
+            <MacroBar label="Fat" val={dp.totals.fat} target={(dp.target ?? plan.targets).fat} />
+          </div>
+        </div>
+      ) : null}
+      {hiding ? <MealFeedback meal={hiding} onCancel={() => setHiding(null)} onSubmit={(f) => hide(hiding, f)} /> : null}
       {plan.prepSession && plan.prepSession.day === day ? (
         <div className="notice">
           <b>🧑‍🍳 Meal prep session · {fmt12(plan.prepSession.time)} ({plan.prepSession.durationMin} min)</b>
@@ -155,7 +241,13 @@ function Today({ plan, profile, day, setDay }: { plan: MealPlan; profile: Profil
             ) : (
               <div className="tl-item" key={`m${k}`}>
                 <div className="tl-time">{fmt12(it.m.time)}</div>
-                <MealCard m={it.m} pointsLabel={plan.dining?.pointsLabel || "points"} next={nextBusy(profile, day, it.m.time)} />
+                <MealCard
+                  m={it.m}
+                  pointsLabel={plan.dining?.pointsLabel || "points"}
+                  next={nextBusy(profile, day, it.m.time)}
+                  onSwap={it.m.source !== "dining" ? () => swap(it.m) : undefined}
+                  onHide={it.m.source !== "dining" ? () => setHiding(it.m) : undefined}
+                />
               </div>
             ),
           )
@@ -267,7 +359,7 @@ function Groceries({ plan, profile, setProfile }: { plan: MealPlan; profile: Pro
           </>
         ) : (
           <p className="muted">
-            <Link href="/onboarding?step=6">Add your address</Link> to see nearby grocery stores.
+            <Link href="/onboarding?step=7">Add your address</Link> to see nearby grocery stores.
           </p>
         )}
       </div>
@@ -275,18 +367,27 @@ function Groceries({ plan, profile, setProfile }: { plan: MealPlan; profile: Pro
   );
 }
 
-function ProfileTab({ profile }: { profile: Profile }) {
+function activitySummary(p: Profile) {
+  const workouts = p.schedule.filter((b) => b.kind === "workout" || b.kind === "practice");
+  const steps = p.steps ? STEP_LABEL[p.steps] : "steps not set";
+  return workouts.length
+    ? `${steps} · ${workouts.map((w) => `${w.activity || w.label} ${w.days.length}×/wk`).join(", ")}`
+    : `${steps} · no workouts added`;
+}
+
+function ProfileTab({ profile, setProfile }: { profile: Profile; setProfile: (p: Profile) => void }) {
   const router = useRouter();
   const rows: [string, string, number][] = [
     ["About", `${profile.age} · ${Math.floor(profile.heightIn / 12)}'${profile.heightIn % 12}" · ${profile.weightLb} lb · ${profile.activity}`, 0],
-    ["Goal", [profile.goal, ...profile.healthGoals].join(", "), 1],
-    ["Diet", [profile.diet, ...profile.allergies.map((a) => `no ${a}`), profile.dislikes && `won't eat: ${profile.dislikes}`, profile.likes && `loves: ${profile.likes}`].filter(Boolean).join(", "), 2],
-    ["Kitchen", `${profile.housing} · ${profile.appliances.join(", ") || "no appliances"} · skill ${profile.skill}/3`, 3],
-    ["Dining", diningSummary(profile), 4],
-    ["Calendar", profile.calendar ? `Connected to ${profile.calendar.provider === "google" ? "Google Calendar" : "Outlook"} (${profile.calendar.account})` : "Not connected", 5],
-    ["Schedule", `${profile.schedule.length} blocks · weekdays ${fmt12(profile.wakeWeekday)}–${fmt12(profile.sleepWeekday)}`, 5],
-    ["Budget", `$${profile.weeklyBudget}/week · ${profile.address || "no address"} · ${profile.stores?.length ?? 0} saved store${profile.stores?.length === 1 ? "" : "s"}`, 6],
-    ["Pantry", `${profile.pantry.length} items`, 7],
+    ["Activity", activitySummary(profile), 1],
+    ["Goal", [profile.goal, ...profile.healthGoals].join(", "), 2],
+    ["Diet", [profile.diet, ...profile.allergies.map((a) => `no ${a}`), profile.dislikes && `won't eat: ${profile.dislikes}`, profile.likes && `loves: ${profile.likes}`].filter(Boolean).join(", "), 3],
+    ["Kitchen", `${profile.housing} · ${profile.appliances.join(", ") || "no appliances"} · skill ${profile.skill}/3`, 4],
+    ["Dining", diningSummary(profile), 5],
+    ["Calendar", profile.calendar ? `Connected to ${profile.calendar.provider === "google" ? "Google Calendar" : "Outlook"} (${profile.calendar.account})` : "Not connected", 6],
+    ["Schedule", `${profile.schedule.length} blocks · weekdays ${fmt12(profile.wakeWeekday)}–${fmt12(profile.sleepWeekday)}`, 6],
+    ["Budget", `$${profile.weeklyBudget}/week · ${profile.address || "no address"} · ${profile.stores?.length ?? 0} saved store${profile.stores?.length === 1 ? "" : "s"}`, 7],
+    ["Pantry", `${profile.pantry.length} items`, 8],
   ];
   return (
     <div className="card">
@@ -295,7 +396,7 @@ function ProfileTab({ profile }: { profile: Profile }) {
           {rows.map(([k, v, s]) => (
             <tr key={k}>
               <th style={{ width: 110 }}>{k}</th>
-              <td style={{ textTransform: k === "Budget" || k === "Schedule" || k === "Calendar" || k === "Dining" ? "none" : "capitalize" }}>{v}</td>
+              <td style={{ textTransform: k === "Budget" || k === "Schedule" || k === "Calendar" || k === "Dining" || k === "Activity" ? "none" : "capitalize" }}>{v}</td>
               <td style={{ textAlign: "right" }}>
                 <Link className="btn sm" href={`/onboarding?step=${s}`}>
                   Edit
@@ -320,6 +421,49 @@ function ProfileTab({ profile }: { profile: Profile }) {
         </button>
       </div>
     </div>
+  );
+}
+
+function ProfileExtras({ profile, setProfile }: { profile: Profile; setProfile: (p: Profile) => void }) {
+  const blocked = profile.blockedMeals ?? [];
+  return (
+    <>
+      <div className="card">
+        <NutritionExplainer profile={profile} />
+      </div>
+      <div className="card">
+        <ThemePicker />
+      </div>
+      <div className="card stack">
+        <h3 style={{ margin: 0 }}>Meals you&apos;ve hidden</h3>
+        {blocked.length ? (
+          <ul className="plain-list">
+            {blocked.map((m) => (
+              <li key={m.name} className="row between">
+                <span>
+                  <b>{m.name}</b> <span className="muted small">· {m.reason}</span>
+                </span>
+                <button type="button" className="btn sm" onClick={() => setProfile({ ...profile, blockedMeals: blocked.filter((x) => x.name !== m.name) })}>
+                  Show again
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="muted small" style={{ margin: 0 }}>
+            None yet. Tap &quot;Don&apos;t show again&quot; on any meal and we&apos;ll learn what you like.
+          </p>
+        )}
+        {profile.preferQuick || profile.preferFilling ? (
+          <p className="small" style={{ margin: 0 }}>
+            We learned: {[profile.preferQuick && "you prefer quicker meals", profile.preferFilling && "you want more filling meals"].filter(Boolean).join(" and ")}.{" "}
+            <button type="button" className="btn ghost sm" style={{ padding: 0 }} onClick={() => setProfile({ ...profile, preferQuick: false, preferFilling: false })}>
+              Reset
+            </button>
+          </p>
+        ) : null}
+      </div>
+    </>
   );
 }
 
@@ -403,7 +547,7 @@ export default function Dashboard() {
         </div>
       ) : (
         <>
-          {tab === "today" && <Today plan={plan} profile={profile} day={day} setDay={setDay} />}
+          {tab === "today" && <Today plan={plan} profile={profile} day={day} setDay={setDay} setPlan={setPlan} setProfile={setProfile} />}
           {tab === "week" && <Week plan={plan} />}
           {tab === "dining" && <DiningTab profile={profile} plan={plan} setProfile={setProfile} rebuild={rebuild} busy={busy} />}
           {tab === "groceries" && <Groceries plan={plan} profile={profile} setProfile={setProfile} />}
@@ -416,7 +560,12 @@ export default function Dashboard() {
               </button>
             </div>
           )}
-          {tab === "profile" && <ProfileTab profile={profile} />}
+          {tab === "profile" && (
+            <div className="stack">
+              <ProfileTab profile={profile} setProfile={setProfile} />
+              <ProfileExtras profile={profile} setProfile={setProfile} />
+            </div>
+          )}
           {plan.tips.length && tab === "today" ? (
             <div className="card" style={{ marginTop: 16 }}>
               <h3>Tips for you</h3>

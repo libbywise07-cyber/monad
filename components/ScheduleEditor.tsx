@@ -3,9 +3,9 @@ import { useState } from "react";
 import { DAYS, type DayIndex, type ScheduleBlock } from "@/lib/types";
 import { fmt12 } from "@/lib/planner";
 
-const KINDS: ScheduleBlock["kind"][] = ["class", "work", "practice", "study", "other"];
+const KINDS: ScheduleBlock["kind"][] = ["class", "work", "practice", "workout", "study", "other"];
 
-export default function ScheduleEditor({ value, onChange }: { value: ScheduleBlock[]; onChange: (v: ScheduleBlock[]) => void }) {
+export default function ScheduleEditor({ value, onChange, travelDefault = 10 }: { value: ScheduleBlock[]; onChange: (v: ScheduleBlock[]) => void; travelDefault?: number }) {
   const [draft, setDraft] = useState<Omit<ScheduleBlock, "id">>({ label: "", kind: "class", days: [0, 2, 4], start: "10:00", end: "10:50" });
   const [err, setErr] = useState("");
 
@@ -47,6 +47,18 @@ export default function ScheduleEditor({ value, onChange }: { value: ScheduleBlo
             <label>Ends</label>
             <input type="time" value={draft.end} onChange={(e) => setDraft({ ...draft, end: e.target.value })} />
           </div>
+          <div>
+            <label htmlFor="block-travel">Travel time each way (min)</label>
+            <input
+              id="block-travel"
+              type="number"
+              min={0}
+              max={120}
+              placeholder={`${travelDefault} (your usual)`}
+              value={draft.travelMin ?? ""}
+              onChange={(e) => setDraft({ ...draft, travelMin: e.target.value === "" ? undefined : +e.target.value })}
+            />
+          </div>
         </div>
         <label style={{ marginTop: 12 }}>Days</label>
         <div className="chips">
@@ -79,11 +91,25 @@ export default function ScheduleEditor({ value, onChange }: { value: ScheduleBlo
               <tr key={b.id}>
                 <td>
                   <b>{b.label}</b> <span className="tag busy">{b.kind}</span>
-                  {b.source ? <span className="tag cal-tag">{b.source === "google" ? "Google" : "Outlook"}</span> : null}
+                  {b.source ? <span className="tag cal-tag">{b.source === "google" ? "Google" : b.source === "outlook" ? "Outlook" : "Calendar file"}</span> : null}
                 </td>
                 <td>{b.days.map((d) => DAYS[d]).join(", ")}</td>
                 <td>
                   {fmt12(b.start)}–{fmt12(b.end)}
+                  <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
+                    <span className="muted small">🚶</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={120}
+                      aria-label={`Travel minutes for ${b.label}`}
+                      title="Minutes to get there, each way"
+                      value={b.travelMin ?? travelDefault}
+                      onChange={(e) => onChange(value.map((x) => (x.id === b.id ? { ...x, travelMin: +e.target.value } : x)))}
+                      style={{ width: 64, padding: "2px 6px", fontSize: 13 }}
+                    />
+                    <span className="muted small">min</span>
+                  </div>
                 </td>
                 <td style={{ textAlign: "right" }}>
                   <button type="button" className="btn ghost sm" onClick={() => onChange(value.filter((x) => x.id !== b.id))} aria-label={`Remove ${b.label}`}>

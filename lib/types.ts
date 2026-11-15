@@ -51,11 +51,22 @@ export const HOUSING_DEFAULTS: Record<Housing, Appliance[]> = {
 export interface ScheduleBlock {
   id: string;
   label: string;
-  kind: "class" | "work" | "practice" | "study" | "other";
+  kind: "class" | "work" | "practice" | "workout" | "study" | "other";
   days: DayIndex[];
   start: string; // "HH:MM"
   end: string; // "HH:MM"
-  source?: CalendarProvider; // set when imported from a connected calendar
+  source?: CalendarProvider | "file"; // set when imported from a connected calendar or a calendar file
+  travelMin?: number; // minutes to get there (and back); defaults to the profile's travelMin
+  intensity?: Intensity; // for workouts and practices: drives calories burned
+  activity?: string; // e.g. "Running", "Lifting" (workouts)
+}
+
+export type Intensity = "light" | "moderate" | "hard";
+export type Steps = "under5k" | "5to8k" | "8to12k" | "over12k";
+
+export interface BlockedMeal {
+  name: string;
+  reason: string;
 }
 
 export type CalendarProvider = "google" | "outlook";
@@ -106,6 +117,11 @@ export interface Profile {
   lon?: number;
   calendar?: CalendarLink;
   stores?: SavedStore[]; // up to 10 stores the student shops at
+  travelMin?: number; // typical minutes to walk/bus to classes and work (default 10)
+  steps?: Steps; // everyday walking, separate from workouts
+  blockedMeals?: BlockedMeal[]; // "don't show me this again"
+  preferQuick?: boolean; // learned from feedback: meals took too long
+  preferFilling?: boolean; // learned from feedback: meals weren't filling
   pantry: PantryItem[];
 }
 
@@ -145,6 +161,8 @@ export interface PlannedMeal {
 
 export interface DayPlan {
   day: DayIndex;
+  target?: Macros; // this day's targets (higher on workout days)
+  burn?: { kcal: number; what: string[] }; // extra calories planned for workouts that day
   meals: PlannedMeal[];
   totals: Macros;
 }

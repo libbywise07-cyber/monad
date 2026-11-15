@@ -3,7 +3,7 @@ import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { claude, describeError, hasClaudeCredentials, MODEL } from "@/lib/claude";
 import { priceGroceries } from "@/lib/prices";
-import { buildRulePlan, freeWindows, mealSlots, nutritionTargets, prepSession, sumMacros, toHHMM, toMin } from "@/lib/planner";
+import { buildRulePlan, dayTargets, freeWindows, mealSlots, nutritionTargets, prepSession, sumMacros, toHHMM, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type MealPlan, type Profile } from "@/lib/types";
 import { diningAllowance, withDiningDefaults } from "@/lib/dining/budget";
 import { applyDining } from "@/lib/server/applyDining";
@@ -89,7 +89,13 @@ async function aiPlan(p: Profile): Promise<MealPlan> {
   const schedule = ([0, 1, 2, 3, 4, 5, 6] as DayIndex[]).map((d) => ({
     day: d,
     name: DAYS[d],
-    busy: p.schedule.filter((b) => b.days.includes(d)).map((b) => `${b.start}-${b.end} ${b.label} (${b.kind})`),
+    busy: p.schedule
+      .filter((b) => b.days.includes(d))
+      .map((b) => `${b.start}-${b.end} ${b.label} (${b.kind}${b.intensity ? `, ${b.intensity}` : ""}; ${b.travelMin ?? p.travelMin ?? 10} min travel each way)`),
+    targetsThisDay: (() => {
+      const t = dayTargets(p, d);
+      return { kcal: t.kcal, protein: t.protein, carbs: t.carbs, fat: t.fat, workoutKcal: t.burn };
+    })(),
     freeWindows: freeWindows(p, d).map((w) => `${w.start}-${w.end} (${w.minutes} min)`),
     suggestedMealTimes: mealSlots(p, d).map((s) => `${s.type} @ ${toHHMM(s.time)}`),
   }));
@@ -110,6 +116,8 @@ async function aiPlan(p: Profile): Promise<MealPlan> {
     diningHallMealsPerWeek: diningAllowance(p.diningSwipes, p.dining).total,
     weeklyGroceryBudgetUSD: p.weeklyBudget,
     pantry: p.pantry.map((x) => (x.quantity ? `${x.name} (${x.quantity})` : x.name)),
+    mealsTheyDontWant: (p.blockedMeals ?? []).map((m) => `${m.name} (${m.reason})`),
+    learnedPreferences: [p.preferQuick && "prefers quick meals (10 min or less)", p.preferFilling && "wants more filling, higher-protein meals"].filter(Boolean),
     schedule,
   };
 

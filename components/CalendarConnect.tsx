@@ -53,8 +53,8 @@ const DEMO_ACCOUNT = "student@example.edu";
 
 type Step = "idle" | "consent" | "syncing" | "review";
 
-export function ProviderMark({ provider }: { provider: CalendarProvider }) {
-  return <span className={`cal-mark ${provider}`} aria-hidden>{provider === "google" ? "G" : "O"}</span>;
+export function ProviderMark({ provider }: { provider: CalendarProvider | "file" }) {
+  return <span className={`cal-mark ${provider}`} aria-hidden>{provider === "google" ? "G" : provider === "outlook" ? "O" : "📅"}</span>;
 }
 
 export function Modal({ title, onClose, children }: { title: string; onClose: () => void; children: React.ReactNode }) {

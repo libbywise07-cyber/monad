@@ -11,6 +11,7 @@ import type {
   MealType,
   PlannedMeal,
   Profile,
+  ScheduleBlock,
 } from "./types";
 
 // ---------- time helpers ----------
@@ -67,30 +68,117 @@ export const timeFitNote = (windowMin: number, type?: MealType) =>
 
 // ---------- nutrition targets ----------
 const ACTIVITY_FACTOR = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, athlete: 1.9 } as const;
+// Everyday movement only (no workouts). Used when the student tells us their steps or workouts.
+export const STEP_FACTOR = { under5k: 1.25, "5to8k": 1.35, "8to12k": 1.45, over12k: 1.55 } as const;
+export const STEP_LABEL = { under5k: "under 5,000 steps", "5to8k": "5,000–8,000 steps", "8to12k": "8,000–12,000 steps", over12k: "over 12,000 steps" } as const;
+// Metabolic equivalents (Compendium of Physical Activities): calories/hour ≈ MET × body weight (kg).
+// We add only the part above resting (MET − 1), since resting burn is already counted.
+const MET_BY_ACTIVITY: Record<string, [number, number, number]> = {
+  lifting: [3.5, 5, 6],
+  running: [6, 9, 11.5],
+  cycling: [4, 7, 10],
+  swimming: [5, 7, 9.5],
+  "sports practice": [5, 7, 9],
+  "yoga / pilates": [2.5, 3, 4],
+  dance: [4, 5.5, 7.5],
+  hiking: [4.5, 6, 7.5],
+  intramurals: [5, 7, 8],
+  "hiit / class": [6, 8, 10],
+};
+const MET_DEFAULT: [number, number, number] = [4, 6, 8];
+const INTENSITY_IDX = { light: 0, moderate: 1, hard: 2 } as const;
+const GOAL_ADJ = { lose: -400, gain: 300, performance: 150, maintain: 0, focus: 0 } as const;
+const PROTEIN_PER_KG = { gain: 1.8, performance: 1.8, lose: 1.6, maintain: 1.3, focus: 1.3 } as const;
 
-export function nutritionTargets(p: Profile): Macros {
+const isExercise = (b: ScheduleBlock) => b.kind === "workout" || b.kind === "practice";
+const blockHours = (b: ScheduleBlock) => Math.max(0, (toMin(b.end) - toMin(b.start)) / 60);
+
+export function bmrOf(p: Profile) {
   const kg = p.weightLb * 0.4536;
   const cm = p.heightIn * 2.54;
   const sexAdj = p.sex === "male" ? 5 : p.sex === "female" ? -161 : -78;
-  const bmr = 10 * kg + 6.25 * cm - 5 * p.age + sexAdj; // Mifflin–St Jeor
-  let kcal = bmr * ACTIVITY_FACTOR[p.activity];
-  if (p.goal === "lose") kcal -= 400;
-  if (p.goal === "gain") kcal += 300;
-  if (p.goal === "performance") kcal += 150;
-  kcal = Math.max(1400, Math.round(kcal / 10) * 10);
+  return 10 * kg + 6.25 * cm - 5 * p.age + sexAdj; // Mifflin–St Jeor
+}
 
-  const proteinPerKg = p.goal === "gain" || p.goal === "performance" ? 1.8 : p.goal === "lose" ? 1.6 : 1.3;
-  let protein = Math.round(kg * proteinPerKg);
+/** Calories a workout/practice block burns above resting. */
+export function workoutKcal(p: Profile, b: ScheduleBlock) {
+  const kg = p.weightLb * 0.4536;
+  const mets = MET_BY_ACTIVITY[(b.activity || (b.kind === "practice" ? "sports practice" : "")).toLowerCase()] ?? MET_DEFAULT;
+  return Math.round((mets[INTENSITY_IDX[b.intensity ?? "moderate"]] - 1) * kg * blockHours(b));
+}
+
+/** True when we can count workouts separately instead of guessing from the activity level. */
+export const detailedActivity = (p: Profile) => Boolean(p.steps) || p.schedule.some(isExercise);
+
+function macrosFor(p: Profile, kcal: number): Macros {
+  const kg = p.weightLb * 0.4536;
+  let protein = Math.round(kg * PROTEIN_PER_KG[p.goal]);
   let fat = Math.round((kcal * 0.28) / 9);
   let carbs = Math.round((kcal - protein * 4 - fat * 9) / 4);
-
   const c = p.customMacros || {};
-  if (c.kcal) kcal = c.kcal;
   if (c.protein) protein = c.protein;
   if (c.fat) fat = c.fat;
   if (c.carbs) carbs = c.carbs;
   else if (c.kcal || c.protein || c.fat) carbs = Math.max(50, Math.round((kcal - protein * 4 - fat * 9) / 4));
   return { kcal, protein, carbs, fat };
+}
+
+/** Targets for one day: workout days get the calories that day's training burns (mostly as carbs). */
+export function dayTargets(p: Profile, day: DayIndex): Macros & { burn: number; what: string[] } {
+  const bmr = bmrOf(p);
+  const custom = p.customMacros?.kcal;
+  let base: number;
+  let burn = 0;
+  const what: string[] = [];
+  if (detailedActivity(p)) {
+    base = bmr * STEP_FACTOR[p.steps ?? "5to8k"];
+    for (const b of p.schedule.filter((x) => x.days.includes(day) && isExercise(x))) {
+      const k = workoutKcal(p, b);
+      burn += k;
+      what.push(`${b.activity || b.label} (+${k})`);
+    }
+  } else base = bmr * ACTIVITY_FACTOR[p.activity];
+  let kcal = custom ? custom + (detailedActivity(p) ? burn : 0) : base + burn + GOAL_ADJ[p.goal];
+  kcal = Math.max(1400, Math.round(kcal / 10) * 10);
+  return { ...macrosFor(p, kcal), burn, what };
+}
+
+/** Weekly average targets (what we show as "your daily target"). */
+export function nutritionTargets(p: Profile): Macros {
+  const days = ([0, 1, 2, 3, 4, 5, 6] as DayIndex[]).map((d) => dayTargets(p, d));
+  const avg = (k: keyof Macros) => Math.round(days.reduce((a, d) => a + d[k], 0) / 7);
+  const kcal = Math.round(avg("kcal") / 10) * 10;
+  return { kcal, protein: avg("protein"), carbs: avg("carbs"), fat: avg("fat") };
+}
+
+/** Plain-language explanation of where the numbers come from. */
+export function calorieBreakdown(p: Profile) {
+  const bmr = Math.round(bmrOf(p));
+  const detailed = detailedActivity(p);
+  const factor = detailed ? STEP_FACTOR[p.steps ?? "5to8k"] : ACTIVITY_FACTOR[p.activity];
+  const everyday = Math.round(bmr * factor) - bmr;
+  const workouts = p.schedule
+    .filter(isExercise)
+    .map((b) => ({ label: b.activity || b.label, perSession: workoutKcal(p, b), perWeek: workoutKcal(p, b) * b.days.length, days: b.days.length }));
+  const weeklyWorkout = workouts.reduce((a, w) => a + w.perWeek, 0);
+  const t = nutritionTargets(p);
+  return {
+    bmr,
+    detailed,
+    factor,
+    everyday,
+    everydayLabel: detailed ? `walking around (${STEP_LABEL[p.steps ?? "5to8k"]} a day)` : `your activity level (${p.activity})`,
+    workouts,
+    workoutAvg: detailed ? Math.round(weeklyWorkout / 7) : 0,
+    goalAdj: p.customMacros?.kcal ? 0 : GOAL_ADJ[p.goal],
+    custom: Boolean(p.customMacros?.kcal),
+    proteinPerKg: PROTEIN_PER_KG[p.goal],
+    targets: t,
+    range: (() => {
+      const ks = ([0, 1, 2, 3, 4, 5, 6] as DayIndex[]).map((d) => dayTargets(p, d).kcal);
+      return { min: Math.min(...ks), max: Math.max(...ks) };
+    })(),
+  };
 }
 
 // ---------- free windows ----------
@@ -100,9 +188,13 @@ export function freeWindows(p: Profile, day: DayIndex): FreeWindow[] {
   let sleep = toMin(weekend ? p.sleepWeekend : p.sleepWeekday);
   if (sleep <= wake) sleep += 1440;
 
+  // Getting there and back counts as busy time: no meals planned while walking to class.
   const busy = p.schedule
     .filter((b) => b.days.includes(day))
-    .map((b) => [toMin(b.start), toMin(b.end)] as [number, number])
+    .map((b) => {
+      const travel = b.travelMin ?? p.travelMin ?? 10;
+      return [toMin(b.start) - travel, toMin(b.end) + travel] as [number, number];
+    })
     .filter(([s, e]) => e > s)
     .sort((a, b) => a[0] - b[0]);
 
@@ -209,6 +301,7 @@ export function recipeAllowed(r: Recipe, p: Profile): boolean {
     .filter(Boolean);
   const text = (r.name + " " + r.ingredients.map((x) => x.name).join(" ")).toLowerCase();
   if (dislikes.some((d) => text.includes(d))) return false;
+  if (p.blockedMeals?.some((m) => m.name === r.name)) return false;
   return true;
 }
 
@@ -312,10 +405,11 @@ export function buildRulePlan(p: Profile): MealPlan {
     const slots = allSlots[d];
     const meals: PlannedMeal[] = [];
     let spentToday = 0;
+    const dt = dayTargets(p, d); // workout days get more
     for (const slot of slots) {
-      const target = targets.kcal * slot.share;
+      const target = dt.kcal * slot.share;
       if (diningSlots.has(slot)) {
-        meals.push(diningMeal(slot, targets));
+        meals.push(diningMeal(slot, dt));
         continue;
       }
       const timeAvail = slot.windowMin - 10; // leave ~10 min to eat
@@ -343,6 +437,7 @@ export function buildRulePlan(p: Profile): MealPlan {
         score += proteinRatio * (p.goal === "gain" || p.goal === "performance" || p.goal === "lose" ? 30 : 12);
         if (slot.windowMin < 30 && r.portable) score += 6;
         if (preppable) score -= 3;
+        score += preferenceScore(r, p);
         score += Math.random() * 2; // variety
         const why =
           slot.windowMin < 30
@@ -364,7 +459,13 @@ export function buildRulePlan(p: Profile): MealPlan {
       meals.push(meal);
     }
     void spentToday;
-    days.push({ day: d, meals, totals: sumMacros(meals) });
+    days.push({
+      day: d,
+      meals,
+      totals: sumMacros(meals),
+      target: { kcal: dt.kcal, protein: dt.protein, carbs: dt.carbs, fat: dt.fat },
+      burn: dt.burn ? { kcal: dt.burn, what: dt.what } : undefined,
+    });
   }
 
   trimToBudget(p, days, allowed);
@@ -381,6 +482,54 @@ export function buildRulePlan(p: Profile): MealPlan {
     tips: baseTips(p, targets),
   };
   return plan;
+}
+
+/** What the student told us through meal feedback and favorite foods. */
+export function preferenceScore(r: Recipe, p: Profile) {
+  let score = 0;
+  if (p.preferQuick) score += r.prepMin <= 10 ? 4 : r.prepMin >= 20 ? -4 : 0;
+  if (p.preferFilling) score += (r.macros.protein >= 25 ? 3 : 0) + (r.macros.kcal >= 500 ? 2 : 0);
+  const likes = (p.likes || "")
+    .toLowerCase()
+    .split(/[,;\n]/)
+    .map((x) => x.trim())
+    .filter(Boolean);
+  const text = (r.name + " " + r.ingredients.map((x) => x.name).join(" ")).toLowerCase();
+  if (likes.some((l) => text.includes(l))) score += 4;
+  return score;
+}
+
+/**
+ * "Choose a new meal": replace one meal with a different recipe that fits the same time slot,
+ * the student's rules, and roughly the same calories and protein. Prefers recipes that reuse this
+ * week's groceries. Returns null when nothing else fits.
+ */
+export function swapMeal(p: Profile, plan: MealPlan, dayIdx: number, mealIdx: number, exclude: string[] = []): MealPlan | null {
+  const day = plan.days[dayIdx];
+  const m = day?.meals[mealIdx];
+  if (!m) return null;
+  const baseName = (x: PlannedMeal) => x.name.replace(/ \(×.*\)$/, "");
+  const onList = new Set(plan.groceries.map((g) => findProduct(g.name)?.pkg ?? g.name.toLowerCase()));
+  const sameDay = new Set(day.meals.map(baseName));
+  const cands = RECIPES.filter((r) => recipeAllowed(r, p) && canFill(r, m, p) && !sameDay.has(r.name) && !exclude.includes(r.name));
+  if (!cands.length) return null;
+  const target = m.macros.kcal || 450;
+  const scored = cands.map((r) => {
+    const scale = Math.min(1.75, Math.max(0.75, target / r.macros.kcal));
+    let score = preferenceScore(r, p) + Math.random() * 3;
+    score -= Math.abs(r.macros.protein * scale - m.macros.protein) / 4;
+    for (const ing of r.ingredients) score += onList.has(findProduct(ing.name)?.pkg ?? ing.name.toLowerCase()) ? 1.5 : -0.8;
+    if (m.windowMin < 30 && r.portable) score += 4;
+    return { r, scale, score };
+  });
+  scored.sort((a, b) => b.score - a.score);
+  const { r, scale } = scored[0];
+  const slot = { type: m.type, time: toMin(m.time), windowMin: m.windowMin, share: 0 };
+  const meal = toMeal(r, slot, p, scale, m.windowMin < 30 ? timeFitNote(m.windowMin) : timeFitNote(m.windowMin, m.type), r.prepMin > m.windowMin - 10 ? "prepped" : "cook");
+  const days = plan.days.map((d, i) => (i === dayIdx ? { ...d, meals: d.meals.map((x, j) => (j === mealIdx ? meal : x)) } : d));
+  days[dayIdx].totals = sumMacros(days[dayIdx].meals);
+  const groceries = priceGroceries(days, p.pantry);
+  return { ...plan, days, groceries, groceryTotal: +groceries.reduce((a, g) => a + g.cost, 0).toFixed(2) };
 }
 
 // ---------- budget trimming ----------
@@ -517,5 +666,7 @@ function baseTips(p: Profile, t: Macros): string[] {
       `We planned ${a.total} dining hall meal${a.total > 1 ? "s" : ""} this week${a.pointMeals ? ` (${a.swipeMeals} on swipes, ${a.pointMeals} on ${withDiningDefaults(p.dining).pointsLabel})` : ""}, on your longest lunch and dinner breaks.`,
     );
   if (p.goal === "focus") tips.push("Pair carbs with protein/fat before exams to avoid an energy crash.");
+  if (p.schedule.some((b) => b.kind === "workout" || b.kind === "practice"))
+    tips.push("On workout days we add the calories you burn, mostly as carbs, and put a snack before or after training.");
   return tips;
 }
