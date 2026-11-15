@@ -30,6 +30,41 @@ export const fmt12 = (t: string) => {
   return `${h12}:${String(m % 60).padStart(2, "0")}${ap}`;
 };
 
+/** "45 min", "1 hr 30 min", "3 hr" */
+export const fmtDuration = (min: number) => {
+  const h = Math.floor(min / 60);
+  const m = Math.round(min % 60);
+  return h ? `${h} hr${m ? ` ${m} min` : ""}` : `${m} min`;
+};
+
+/**
+ * How much free time a meal has, in plain words. Short breaks show a length ("45 min free").
+ * Long stretches name what comes next ("free until Bio at 10:00am"), or return "" when the rest of the day is open.
+ */
+export function freeTimeLabel(windowMin: number, next?: { label: string; start: string }): string {
+  if (windowMin < 180) return `${fmtDuration(windowMin)} free`;
+  return next ? `free until ${next.label} at ${fmt12(next.start)}` : ""; // rest of the day is open: nothing worth saying
+}
+
+/** The next class, shift or other block that day after a given time, if any. */
+export function nextBusy(p: Profile, day: DayIndex, time: string): { label: string; start: string } | undefined {
+  const t = toMin(time);
+  return p.schedule
+    .filter((b) => b.days.includes(day) && toMin(b.start) > t)
+    .sort((a, b) => toMin(a.start) - toMin(b.start))
+    .map((b) => ({ label: b.label, start: b.start }))[0];
+}
+
+/** Short note on why a meal fits the time the student has. */
+export const timeFitNote = (windowMin: number, type?: MealType) =>
+  windowMin < 30
+    ? `Only ${windowMin} min free, so it's portable and quick.`
+    : windowMin >= 180
+      ? type === "snack"
+        ? "A quick snack to keep your energy steady between meals."
+        : "You have time to cook it fresh and sit down to eat."
+      : `Fits your ${fmtDuration(windowMin)} break.`;
+
 // ---------- nutrition targets ----------
 const ACTIVITY_FACTOR = { sedentary: 1.2, light: 1.375, moderate: 1.55, active: 1.725, athlete: 1.9 } as const;
 
@@ -311,12 +346,12 @@ export function buildRulePlan(p: Profile): MealPlan {
         score += Math.random() * 2; // variety
         const why =
           slot.windowMin < 30
-            ? `Only ${slot.windowMin} min free — portable and quick.`
+            ? timeFitNote(slot.windowMin)
             : pm
               ? `Uses what you have: ${pantryMatches(r, p).join(", ")}.`
               : preppable
                 ? "Make it during your prep session; reheat or eat cold."
-                : `Fits your ${slot.windowMin}-min break.`;
+                : timeFitNote(slot.windowMin, slot.type);
         if (!best || score > best.score) best = { r, score, why };
       }
       if (!best) continue;
@@ -389,7 +424,7 @@ function trimToBudget(p: Profile, days: DayPlan[], allowed: Recipe[]) {
   const build = (m: PlannedMeal, r: Recipe, scale: number) => {
     const slot = { type: m.type, time: toMin(m.time), windowMin: m.windowMin, share: 0 };
     const meal = toMeal(r, slot, p, scale, "", m.source === "prepped" && r.portable ? "prepped" : "cook");
-    meal.why = m.windowMin < 30 ? `Only ${m.windowMin} min free — portable and quick.` : "Shares groceries with your other meals this week.";
+    meal.why = m.windowMin < 30 ? timeFitNote(m.windowMin) : "Shares groceries with your other meals this week.";
     return meal;
   };
 

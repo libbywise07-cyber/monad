@@ -9,7 +9,7 @@ import { ProviderMark } from "@/components/CalendarConnect";
 import DiningTab, { diningSummary } from "@/components/DiningTab";
 import { fmtPoints } from "@/lib/dining/budget";
 import { requestPlan, resetAll, useStored } from "@/lib/store";
-import { fmt12, toMin } from "@/lib/planner";
+import { fmt12, freeTimeLabel, nextBusy, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type Macros, type MealPlan, type PlannedMeal, type Profile } from "@/lib/types";
 
 type Tab = "today" | "week" | "dining" | "groceries" | "pantry" | "profile";
@@ -41,15 +41,15 @@ function Macrosline({ m }: { m: Macros }) {
   );
 }
 
-function MealCard({ m, pointsLabel }: { m: PlannedMeal; pointsLabel: string }) {
+function MealCard({ m, pointsLabel, next }: { m: PlannedMeal; pointsLabel: string; next?: { label: string; start: string } }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`card tl-meal ${m.type === "snack" ? "snack" : ""}`} style={{ padding: 14 }}>
       <div className="row between" style={{ alignItems: "flex-start" }}>
         <div>
-          <div className="small muted" style={{ textTransform: "capitalize" }}>
-            {m.type}
-            {m.windowMin ? ` · ${m.windowMin} min free` : ""}
+          <div className="small muted">
+            <span style={{ textTransform: "capitalize" }}>{m.type}</span>
+            {m.windowMin && freeTimeLabel(m.windowMin, next) ? ` · ${freeTimeLabel(m.windowMin, next)}` : ""}
           </div>
           <h3 style={{ margin: "2px 0" }}>{m.name}</h3>
           <Macrosline m={m.macros} />
@@ -155,7 +155,7 @@ function Today({ plan, profile, day, setDay }: { plan: MealPlan; profile: Profil
             ) : (
               <div className="tl-item" key={`m${k}`}>
                 <div className="tl-time">{fmt12(it.m.time)}</div>
-                <MealCard m={it.m} pointsLabel={plan.dining?.pointsLabel || "points"} />
+                <MealCard m={it.m} pointsLabel={plan.dining?.pointsLabel || "points"} next={nextBusy(profile, day, it.m.time)} />
               </div>
             ),
           )
