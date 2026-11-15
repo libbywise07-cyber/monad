@@ -233,7 +233,7 @@ function Groceries({ plan, profile }: { plan: MealPlan; profile: Profile }) {
             <p className="muted small" style={{ margin: 0 }}>
               Near {profile.address}. $ = budget-friendly.
             </p>
-            <StoreFinder address={profile.address} auto />
+            <StoreFinder address={profile.address} lat={profile.lat} lon={profile.lon} auto />
           </>
         ) : (
           <p className="muted">

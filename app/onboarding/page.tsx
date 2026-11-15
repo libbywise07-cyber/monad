@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import ScheduleEditor from "@/components/ScheduleEditor";
 import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
+import AddressInput from "@/components/AddressInput";
 import { DEFAULT_PROFILE, loadProfile, requestPlan, saveProfile, savePlan } from "@/lib/store";
 import { nutritionTargets } from "@/lib/planner";
 import {
@@ -328,11 +329,16 @@ export default function Onboarding() {
               <p className="muted small">About ${(p.weeklyBudget / 7).toFixed(2)} a day. Dining swipes don&apos;t count toward this.</p>
             </div>
             <div>
-              <label>Your address (or campus + city)</label>
-              <input value={p.address} onChange={(e) => up("address", e.target.value)} placeholder="e.g. 100 University Ave, Austin, TX" />
+              <label htmlFor="address">Your address (or campus + city)</label>
+              <AddressInput
+                value={p.address}
+                lat={p.lat}
+                lon={p.lon}
+                onChange={({ label, lat, lon }) => setP((x) => ({ ...x, address: label, lat, lon }))}
+              />
               <p className="muted small">Only used to find grocery stores near you.</p>
             </div>
-            <StoreFinder address={p.address} />
+            <StoreFinder address={p.address} lat={p.lat} lon={p.lon} />
           </>
         )}
 

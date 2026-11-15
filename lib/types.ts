@@ -87,6 +87,8 @@ export interface Profile {
   schedule: ScheduleBlock[];
   weeklyBudget: number;
   address: string;
+  lat?: number; // set when the address is picked from suggestions or current location
+  lon?: number;
   pantry: PantryItem[];
 }
 

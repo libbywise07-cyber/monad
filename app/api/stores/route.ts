@@ -1,35 +1,56 @@
 import { NextResponse } from "next/server";
+import { geocode, UA } from "@/lib/server/geo";
 
 export const runtime = "nodejs";
 
-// Free OpenStreetMap services — no API key required.
-const UA = "CampusFuel/0.1 (student meal planner demo)";
+// Overpass (OpenStreetMap) mirrors. We ask all of them at once and use whichever answers first.
+const OVERPASS = [
+  "https://overpass-api.de/api/interpreter",
+  "https://overpass.kumi.systems/api/interpreter",
+  "https://overpass.private.coffee/api/interpreter",
+  "https://maps.mail.ru/osm/tools/overpass/api/interpreter",
+];
 
 const BUDGET_CHAINS: Record<string, string> = {
   aldi: "$",
   lidl: "$",
   walmart: "$",
-  "winco": "$",
+  winco: "$",
   "food 4 less": "$",
   "save a lot": "$",
   "grocery outlet": "$",
   "trader joe": "$$",
   target: "$$",
   kroger: "$$",
+  "fred meyer": "$$",
   costco: "$ (bulk)",
   "sam's club": "$ (bulk)",
   safeway: "$$",
+  albertsons: "$$",
   publix: "$$",
   "h-e-b": "$",
   heb: "$",
   meijer: "$$",
   "stop & shop": "$$",
+  "market of choice": "$$$",
   "whole foods": "$$$",
-  "sprouts": "$$",
+  sprouts: "$$",
   "7-eleven": "$$$ (convenience)",
   cvs: "$$$ (convenience)",
   walgreens: "$$$ (convenience)",
 };
+
+export interface Store {
+  name: string;
+  type: string;
+  address: string;
+  distanceMi: number;
+  price: string;
+  hours: string;
+  lat: number;
+  lon: number;
+  mapUrl: string;
+}
 
 function priceTier(name: string, shop: string) {
   const n = name.toLowerCase();
@@ -46,64 +67,82 @@ function haversineMi(a: [number, number], b: [number, number]) {
   return 2 * R * Math.asin(Math.sqrt(s));
 }
 
+type El = { lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
+
+async function overpass(lat: number, lon: number): Promise<El[]> {
+  const q = `[out:json][timeout:12];nwr["shop"~"^(supermarket|grocery|greengrocer|convenience|wholesale)$"](around:4800,${lat},${lon});out center 80;`;
+  const body = "data=" + encodeURIComponent(q);
+  const controllers = OVERPASS.map(() => new AbortController());
+  const attempts = OVERPASS.map(async (url, i) => {
+    const timer = setTimeout(() => controllers[i].abort(), 15000);
+    try {
+      const r = await fetch(url, {
+        method: "POST",
+        headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
+        body,
+        signal: controllers[i].signal,
+      });
+      if (!r.ok) throw new Error(`${r.status}`);
+      const json = (await r.json()) as { elements?: El[] };
+      if (!json.elements) throw new Error("bad response");
+      return json.elements;
+    } finally {
+      clearTimeout(timer);
+    }
+  });
+  const elements = await Promise.any(attempts);
+  controllers.forEach((c) => c.abort()); // cancel the slower mirrors
+  return elements;
+}
+
+// Small in-memory cache so revisiting the Groceries tab is instant.
+const cache = new Map<string, { at: number; data: unknown }>();
+const TTL = 1000 * 60 * 60 * 6;
+
 export async function GET(req: Request) {
-  const address = new URL(req.url).searchParams.get("address")?.trim();
-  if (!address) return NextResponse.json({ error: "address required" }, { status: 400 });
+  const sp = new URL(req.url).searchParams;
+  const address = sp.get("address")?.trim() || "";
+  let lat = sp.get("lat") ? Number(sp.get("lat")) : NaN;
+  let lon = sp.get("lon") ? Number(sp.get("lon")) : NaN;
+  let label = address;
 
   try {
-    const geo = await fetch(
-      `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`,
-      { headers: { "User-Agent": UA, "Accept-Language": "en" } },
-    ).then((r) => r.json());
-    if (!geo?.[0]) return NextResponse.json({ error: "Couldn't find that address. Try adding city and state." }, { status: 404 });
-    const origin: [number, number] = [parseFloat(geo[0].lat), parseFloat(geo[0].lon)];
-
-    const radius = 4800; // ~3 miles
-    const q = `[out:json][timeout:20];(
-      nwr["shop"~"^(supermarket|grocery|greengrocer|convenience|wholesale)$"](around:${radius},${origin[0]},${origin[1]});
-    );out center 60;`;
-    let osm: { elements?: unknown[] } | null = null;
-    for (const mirror of ["https://overpass-api.de/api/interpreter", "https://overpass.kumi.systems/api/interpreter"]) {
-      try {
-        const r = await fetch(mirror, {
-          method: "POST",
-          headers: { "User-Agent": UA, "Content-Type": "application/x-www-form-urlencoded" },
-          body: "data=" + encodeURIComponent(q),
-        });
-        if (r.ok) {
-          osm = await r.json();
-          break;
-        }
-      } catch {
-        /* try next mirror */
-      }
+    if (Number.isNaN(lat) || Number.isNaN(lon)) {
+      if (!address) return NextResponse.json({ error: "Enter an address or use your current location." }, { status: 400 });
+      const place = await geocode(address);
+      if (!place)
+        return NextResponse.json({ error: "Couldn't find that address. Pick one of the suggestions, or add your city and state." }, { status: 404 });
+      ({ lat, lon, label } = place);
     }
-    if (!osm) throw new Error("overpass unavailable");
 
-    type El = { lat?: number; lon?: number; center?: { lat: number; lon: number }; tags?: Record<string, string> };
-    const stores = ((osm.elements || []) as El[])
-      .map((e) => {
-        const lat = e.lat ?? e.center?.lat;
-        const lon = e.lon ?? e.center?.lon;
-        const t = e.tags || {};
-        if (lat == null || lon == null || !t.name) return null;
-        const shop = t.shop || "store";
-        const addr = [t["addr:housenumber"], t["addr:street"], t["addr:city"]].filter(Boolean).join(" ");
-        return {
-          name: t.name,
-          type: shop,
-          address: addr,
-          distanceMi: +haversineMi(origin, [lat, lon]).toFixed(2),
-          price: priceTier(t.name, shop),
-          hours: t.opening_hours || "",
-          lat,
-          lon,
-          mapUrl: `https://www.openstreetmap.org/?mlat=${lat}&mlon=${lon}#map=17/${lat}/${lon}`,
-        };
-      })
-      .filter(Boolean) as { name: string; type: string; distanceMi: number }[];
+    const key = `${lat.toFixed(3)},${lon.toFixed(3)}`;
+    const hit = cache.get(key);
+    if (hit && Date.now() - hit.at < TTL) return NextResponse.json(hit.data);
 
-    // de-dupe by name+distance and favor real grocery stores over convenience
+    const origin: [number, number] = [lat, lon];
+    const elements = await overpass(lat, lon);
+
+    const stores: Store[] = [];
+    for (const e of elements) {
+      const elat = e.lat ?? e.center?.lat;
+      const elon = e.lon ?? e.center?.lon;
+      const t = e.tags || {};
+      if (elat == null || elon == null || !t.name) continue;
+      const shop = t.shop || "store";
+      stores.push({
+        name: t.name,
+        type: shop,
+        address: [t["addr:housenumber"], t["addr:street"], t["addr:city"]].filter(Boolean).join(" "),
+        distanceMi: +haversineMi(origin, [elat, elon]).toFixed(2),
+        price: priceTier(t.name, shop),
+        hours: t.opening_hours || "",
+        lat: elat,
+        lon: elon,
+        mapUrl: `https://www.google.com/maps/dir/?api=1&destination=${elat},${elon}`,
+      });
+    }
+
+    // Grocery stores first (convenience stores count as 1.5 mi farther), one entry per name.
     const seen = new Set<string>();
     const unique = stores
       .sort((a, b) => a.distanceMi + (a.type === "convenience" ? 1.5 : 0) - (b.distanceMi + (b.type === "convenience" ? 1.5 : 0)))
@@ -115,8 +154,10 @@ export async function GET(req: Request) {
       })
       .slice(0, 12);
 
-    return NextResponse.json({ origin: { lat: origin[0], lon: origin[1], label: geo[0].display_name }, stores: unique });
+    const data = { origin: { lat, lon, label }, stores: unique };
+    cache.set(key, { at: Date.now(), data });
+    return NextResponse.json(data);
   } catch {
-    return NextResponse.json({ error: "Store lookup failed — the map service may be busy. Try again shortly." }, { status: 502 });
+    return NextResponse.json({ error: "The store map service didn't answer in time. Tap Retry." }, { status: 504 });
   }
 }
