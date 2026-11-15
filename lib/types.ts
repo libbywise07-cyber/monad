@@ -1,4 +1,5 @@
 // Shared types for CampusFuel.
+import type { DiningMealInfo, DiningSetup } from "./dining/types";
 
 export const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
 export type DayIndex = 0 | 1 | 2 | 3 | 4 | 5 | 6;
@@ -91,6 +92,7 @@ export interface Profile {
   skill: Skill;
   maxCookMin: number;
   diningSwipes: number; // per week
+  dining: DiningSetup; // school, dining hall, points balance and how the meal plan charges
   wakeWeekday: string;
   sleepWeekday: string;
   wakeWeekend: string;
@@ -136,6 +138,7 @@ export interface PlannedMeal {
   steps: string[];
   usesPantry: string[];
   why: string;
+  dining?: DiningMealInfo; // set when this meal is eaten at a dining hall with a known menu
 }
 
 export interface DayPlan {
@@ -165,6 +168,14 @@ export interface MealPlan {
   groceryTotal: number;
   prepSession?: { day: DayIndex; time: string; durationMin: number; tasks: string[] };
   tips: string[];
+  dining?: {
+    hall: string;
+    dated: boolean; // true = real menus for these dates
+    swipes: number; // swipes used this week
+    points: number; // points this plan spends this week
+    pointsPerWeek: number; // what the balance allows per week
+    pointsLabel: string;
+  };
 }
 
 export interface FreeWindow {

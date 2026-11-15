@@ -5,6 +5,8 @@ import { claude, describeError, hasClaudeCredentials, MODEL } from "@/lib/claude
 import { priceGroceries } from "@/lib/prices";
 import { buildRulePlan, freeWindows, mealSlots, nutritionTargets, prepSession, sumMacros, toHHMM, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type MealPlan, type Profile } from "@/lib/types";
+import { diningAllowance, withDiningDefaults } from "@/lib/dining/budget";
+import { applyDining } from "@/lib/server/applyDining";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -52,7 +54,7 @@ Hard rules:
 - Keep the week's grocery bill at or under the weekly budget. The bill is priced by whole packages
   (a dozen eggs, a 16 oz jar of peanut butter), not by the amount used, so reuse the same ingredients
   across several meals and avoid buying a package for a single use. Use realistic US store-brand prices.
-- If the student has dining hall swipes, use up to that many per week as source "dining" (cost 0) on lunches/dinners, ideally on days with long breaks near the dining hall time.
+- If the student has dining hall meals, schedule up to that many per week as source "dining" (cost 0) on lunches/dinners first (breakfast only if there are more than 14), in breaks of 25+ minutes. Set each dining meal's macros to the target for that meal and name it "Dining Hall Plate"; the real dishes from their dining hall menu are filled in afterwards.
 - Hit the daily calorie and macro targets within ~10%, especially protein.
 - Use the student's health goals to shape choices (e.g. fiber, iron, less added sugar, pre-practice fueling).
 Keep steps short (max 4) and practical.`;
@@ -61,20 +63,21 @@ export async function POST(req: Request) {
   const { profile } = (await req.json()) as { profile: Profile };
   if (!profile) return NextResponse.json({ error: "profile required" }, { status: 400 });
 
-  if (!hasClaudeCredentials()) {
-    const plan = buildRulePlan(profile);
-    plan.note = "Generated with the built-in planner. Add ANTHROPIC_API_KEY for fully custom AI plans.";
-    return NextResponse.json(plan);
-  }
+  profile.dining = withDiningDefaults(profile.dining);
 
-  try {
-    const plan = await aiPlan(profile);
-    return NextResponse.json(plan);
-  } catch (err) {
-    const plan = buildRulePlan(profile);
-    plan.note = `AI planner unavailable (${describeError(err)}). Showing the built-in plan instead.`;
-    return NextResponse.json(plan);
+  let plan: MealPlan;
+  if (!hasClaudeCredentials()) {
+    plan = buildRulePlan(profile);
+    plan.note = "Generated with the built-in planner. Add ANTHROPIC_API_KEY for fully custom AI plans.";
+  } else {
+    try {
+      plan = await aiPlan(profile);
+    } catch (err) {
+      plan = buildRulePlan(profile);
+      plan.note = `AI planner unavailable (${describeError(err)}). Showing the built-in plan instead.`;
+    }
   }
+  return NextResponse.json(await applyDining(plan, profile));
 }
 
 async function aiPlan(p: Profile): Promise<MealPlan> {
@@ -99,7 +102,7 @@ async function aiPlan(p: Profile): Promise<MealPlan> {
     appliances: p.appliances,
     cookingSkill: p.skill,
     maxCookMinutes: p.maxCookMin,
-    diningHallSwipesPerWeek: p.diningSwipes,
+    diningHallMealsPerWeek: diningAllowance(p.diningSwipes, p.dining).total,
     weeklyGroceryBudgetUSD: p.weeklyBudget,
     pantry: p.pantry.map((x) => (x.quantity ? `${x.name} (${x.quantity})` : x.name)),
     schedule,

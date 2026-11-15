@@ -2,6 +2,8 @@
 import { useEffect, useState } from "react";
 import type { MealPlan, Profile } from "./types";
 import { HOUSING_DEFAULTS } from "./types";
+import { DEFAULT_DINING } from "./dining/types";
+import { withDiningDefaults } from "./dining/budget";
 
 const PROFILE_KEY = "campusfuel.profile.v1";
 const PLAN_KEY = "campusfuel.plan.v1";
@@ -24,6 +26,7 @@ export const DEFAULT_PROFILE: Profile = {
   skill: 1,
   maxCookMin: 20,
   diningSwipes: 0,
+  dining: DEFAULT_DINING,
   wakeWeekday: "07:30",
   sleepWeekday: "23:30",
   wakeWeekend: "09:30",
@@ -53,7 +56,11 @@ function write(key: string, v: unknown) {
 
 export const loadProfile = () => {
   const p = read<Profile>(PROFILE_KEY);
-  return p ? { ...DEFAULT_PROFILE, ...p } : null;
+  if (!p) return null;
+  const dining = withDiningDefaults(p.dining);
+  // Older profiles only had a swipe count.
+  if (!p.dining && p.diningSwipes > 0) dining.payment = "swipes";
+  return { ...DEFAULT_PROFILE, ...p, dining };
 };
 export const saveProfile = (p: Profile) => write(PROFILE_KEY, p);
 export const loadPlan = () => read<MealPlan>(PLAN_KEY);

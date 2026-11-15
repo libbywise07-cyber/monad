@@ -41,6 +41,7 @@ To make it real:
 - **AI planner** (`app/api/plan`): sends your profile, computed free windows and macro targets to Claude. Claude returns a structured 7-day plan, validated with Zod.
 - **Rule-based planner** (`lib/planner.ts`): works offline and is the automatic fallback. It finds free windows, places meals near ideal times, and scores ~30 student-friendly recipes on diet, appliances, skill, time, pantry overlap, cost and protein.
 - **Pantry scanner** (`app/api/scan`): Claude vision turns fridge photos into a structured ingredient list.
+- **Dining halls** (`lib/server/dining.ts`, `app/api/dining`): reads real dining hall menus with nutrition and allergen info from Nutrition Addition (e.g. University of Oregon) and Nutrislice (about 50 colleges listed in `lib/dining/schools.ts`, and any other Nutrislice school via a pasted link). Other menu pages can be read by Claude with an API key. `lib/dining/pick.ts` builds the healthiest plate for each dining meal based on the student's goal, diet and allergies. Swipes, points/dining dollars (per item or a single price to get in) and the term balance are tracked on the **Dining** tab.
 - **Store finder** (`app/api/stores`): Nominatim geocoding plus an Overpass query for supermarkets within ~3 miles. No API key needed.
 - Your profile and plan stay in your browser (localStorage). There's no account server.
 

@@ -1,5 +1,6 @@
 import { RECIPES, type Recipe } from "./recipes";
 import { findProduct, priceGroceries } from "./prices";
+import { diningAllowance, withDiningDefaults } from "./dining/budget";
 import type {
   DayIndex,
   DayPlan,
@@ -213,7 +214,7 @@ function toMeal(r: Recipe, slot: Slot, p: Profile, scale: number, why: string, s
   };
 }
 
-function diningMeal(slot: Slot, target: number): PlannedMeal {
+function diningMeal(slot: Slot, t: Macros): PlannedMeal {
   return {
     type: slot.type,
     time: toHHMM(slot.time),
@@ -222,7 +223,13 @@ function diningMeal(slot: Slot, target: number): PlannedMeal {
     prepMin: 0,
     portable: false,
     source: "dining",
-    macros: { kcal: target, protein: Math.round((target * 0.3) / 4), carbs: Math.round((target * 0.45) / 4), fat: Math.round((target * 0.25) / 9) },
+    // This is the target for the meal. When we know the dining hall's menu, the plan route swaps in real dishes.
+    macros: {
+      kcal: Math.round(t.kcal * slot.share),
+      protein: Math.round(t.protein * slot.share),
+      carbs: Math.round(t.carbs * slot.share),
+      fat: Math.round(t.fat * slot.share),
+    },
     cost: 0,
     ingredients: [],
     steps: [
@@ -231,8 +238,27 @@ function diningMeal(slot: Slot, target: number): PlannedMeal {
       "Quarter plate: whole grains or potatoes. Add fruit + water.",
     ],
     usesPantry: [],
-    why: "Uses a prepaid meal swipe — zero grocery cost.",
+    why: "Eat at the dining hall — zero grocery cost.",
   };
+}
+
+/**
+ * Chooses which meals happen at the dining hall: lunches and dinners first, then breakfasts,
+ * spread across the week, only in breaks long enough to walk over and eat (25+ min).
+ */
+export function pickDiningSlots(allSlots: Slot[][], count: number): Set<Slot> {
+  const chosen = new Set<Slot>();
+  if (count <= 0) return chosen;
+  const tiers: MealType[][] = [["lunch", "dinner"], ["breakfast"]];
+  for (const tier of tiers) {
+    const perDay = allSlots.map((slots) => slots.filter((s) => tier.includes(s.type) && s.windowMin >= 25).sort((a, b) => b.windowMin - a.windowMin));
+    for (let round = 0; round < 3; round++)
+      for (const list of perDay) {
+        if (chosen.size >= count) return chosen;
+        if (list[round]) chosen.add(list[round]);
+      }
+  }
+  return chosen;
 }
 
 // ---------- rule-based planner ----------
@@ -242,24 +268,20 @@ export function buildRulePlan(p: Profile): MealPlan {
   const usage = new Map<string, number>();
   const basket = new Set<string>(); // packages already on this week's list
   const productKey = (name: string) => findProduct(name)?.pkg + "|" + (findProduct(name)?.match[0] ?? name.toLowerCase());
-  let swipesLeft = p.diningSwipes;
   const dailyBudget = p.weeklyBudget / 7;
   const days: DayPlan[] = [];
+  const allSlots = ([0, 1, 2, 3, 4, 5, 6] as DayIndex[]).map((d) => mealSlots(p, d));
+  const diningSlots = pickDiningSlots(allSlots, diningAllowance(p.diningSwipes, withDiningDefaults(p.dining)).total);
 
   for (let d = 0 as DayIndex; d < 7; d = (d + 1) as DayIndex) {
-    const slots = mealSlots(p, d);
+    const slots = allSlots[d];
     const meals: PlannedMeal[] = [];
     let spentToday = 0;
     for (const slot of slots) {
       const target = targets.kcal * slot.share;
-      // Use dining swipes on lunch/dinner, preferring the busiest days (shortest windows)
-      if (swipesLeft > 0 && slot.type !== "snack" && slot.type !== "breakfast" && slot.windowMin >= 25) {
-        const remainingSlots = (6 - d) * 2 + (slot.type === "lunch" ? 2 : 1);
-        if (swipesLeft >= remainingSlots || slot.windowMin < 60 || Math.random() < swipesLeft / remainingSlots + 0.15) {
-          swipesLeft--;
-          meals.push(diningMeal(slot, Math.round(target)));
-          continue;
-        }
+      if (diningSlots.has(slot)) {
+        meals.push(diningMeal(slot, targets));
+        continue;
       }
       const timeAvail = slot.windowMin - 10; // leave ~10 min to eat
       const cands = allowed.filter((r) => r.types.includes(slot.type));
@@ -454,7 +476,11 @@ function baseTips(p: Profile, t: Macros): string[] {
     "Keep a water bottle on you; mild dehydration hurts focus more than skipped snacks.",
   ];
   if (p.housing === "dorm") tips.push("Dorm hack: a microwave + kettle can cook rice cups, oats, ramen upgrades and frozen veg.");
-  if (p.diningSwipes > 0) tips.push(`You have ${p.diningSwipes} meal swipes — we used them on your longest lunch/dinner breaks.`);
+  const a = diningAllowance(p.diningSwipes, withDiningDefaults(p.dining));
+  if (a.total > 0)
+    tips.push(
+      `We planned ${a.total} dining hall meal${a.total > 1 ? "s" : ""} this week${a.pointMeals ? ` (${a.swipeMeals} on swipes, ${a.pointMeals} on ${withDiningDefaults(p.dining).pointsLabel})` : ""}, on your longest lunch and dinner breaks.`,
+    );
   if (p.goal === "focus") tips.push("Pair carbs with protein/fat before exams to avoid an energy crash.");
   return tips;
 }

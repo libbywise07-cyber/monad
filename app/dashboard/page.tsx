@@ -6,11 +6,13 @@ import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
 import MealsToCalendar from "@/components/MealsToCalendar";
 import { ProviderMark } from "@/components/CalendarConnect";
+import DiningTab, { diningSummary } from "@/components/DiningTab";
+import { fmtPoints } from "@/lib/dining/budget";
 import { requestPlan, resetAll, useStored } from "@/lib/store";
 import { fmt12, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type Macros, type MealPlan, type PlannedMeal, type Profile } from "@/lib/types";
 
-type Tab = "today" | "week" | "groceries" | "pantry" | "profile";
+type Tab = "today" | "week" | "dining" | "groceries" | "pantry" | "profile";
 const todayIdx = () => ((new Date().getDay() + 6) % 7) as DayIndex;
 
 function MacroBar({ label, val, target, unit = "g" }: { label: string; val: number; target: number; unit?: string }) {
@@ -39,7 +41,7 @@ function Macrosline({ m }: { m: Macros }) {
   );
 }
 
-function MealCard({ m }: { m: PlannedMeal }) {
+function MealCard({ m, pointsLabel }: { m: PlannedMeal; pointsLabel: string }) {
   const [open, setOpen] = useState(false);
   return (
     <div className={`card tl-meal ${m.type === "snack" ? "snack" : ""}`} style={{ padding: 14 }}>
@@ -53,7 +55,9 @@ function MealCard({ m }: { m: PlannedMeal }) {
           <Macrosline m={m.macros} />
         </div>
         <div className="row" style={{ gap: 6 }}>
-          {m.source === "dining" ? <span className="tag">🍽️ swipe</span> : null}
+          {m.source === "dining" ? (
+            <span className="tag">{m.dining?.pay === "points" ? `🪙 ${fmtPoints(m.dining.points, pointsLabel)}` : "🍽️ swipe"}</span>
+          ) : null}
           {m.source === "prepped" ? <span className="tag warn">🥡 prep ahead</span> : null}
           {m.portable ? <span className="tag">🎒 portable</span> : null}
           {m.prepMin ? <span className="tag">⏱ {m.prepMin}m</span> : null}
@@ -64,7 +68,7 @@ function MealCard({ m }: { m: PlannedMeal }) {
       </p>
       {m.usesPantry.length ? <p className="small muted" style={{ margin: "4px 0 0" }}>✅ From your pantry: {m.usesPantry.join(", ")}</p> : null}
       <button type="button" className="btn ghost sm" style={{ paddingLeft: 0, marginTop: 4 }} onClick={() => setOpen(!open)}>
-        {open ? "Hide recipe ▲" : "Show recipe ▼"}
+        {m.dining?.items.length ? (open ? "Hide plate ▲" : `What to get at ${m.dining.hall} ▼`) : open ? "Hide recipe ▲" : "Show recipe ▼"}
       </button>
       {open ? (
         <div className="grid g2 small">
@@ -81,7 +85,7 @@ function MealCard({ m }: { m: PlannedMeal }) {
             </div>
           ) : null}
           <div>
-            <b>Steps</b>
+            <b>{m.dining?.items.length ? "Your plate" : "Steps"}</b>
             <ol style={{ margin: "4px 0", paddingLeft: 18 }}>
               {m.steps.map((s, k) => (
                 <li key={k}>{s}</li>
@@ -151,7 +155,7 @@ function Today({ plan, profile, day, setDay }: { plan: MealPlan; profile: Profil
             ) : (
               <div className="tl-item" key={`m${k}`}>
                 <div className="tl-time">{fmt12(it.m.time)}</div>
-                <MealCard m={it.m} />
+                <MealCard m={it.m} pointsLabel={plan.dining?.pointsLabel || "points"} />
               </div>
             ),
           )
@@ -263,7 +267,7 @@ function Groceries({ plan, profile, setProfile }: { plan: MealPlan; profile: Pro
           </>
         ) : (
           <p className="muted">
-            <Link href="/onboarding?step=5">Add your address</Link> to see nearby grocery stores.
+            <Link href="/onboarding?step=6">Add your address</Link> to see nearby grocery stores.
           </p>
         )}
       </div>
@@ -277,11 +281,12 @@ function ProfileTab({ profile }: { profile: Profile }) {
     ["About", `${profile.age} · ${Math.floor(profile.heightIn / 12)}'${profile.heightIn % 12}" · ${profile.weightLb} lb · ${profile.activity}`, 0],
     ["Goal", [profile.goal, ...profile.healthGoals].join(", "), 1],
     ["Diet", [profile.diet, ...profile.allergies.map((a) => `no ${a}`), profile.dislikes].filter(Boolean).join(", "), 2],
-    ["Kitchen", `${profile.housing} · ${profile.appliances.join(", ") || "no appliances"} · skill ${profile.skill}/3 · ${profile.diningSwipes} swipes/wk`, 3],
-    ["Calendar", profile.calendar ? `Connected to ${profile.calendar.provider === "google" ? "Google Calendar" : "Outlook"} (${profile.calendar.account})` : "Not connected", 4],
-    ["Schedule", `${profile.schedule.length} blocks · weekdays ${fmt12(profile.wakeWeekday)}–${fmt12(profile.sleepWeekday)}`, 4],
-    ["Budget", `$${profile.weeklyBudget}/week · ${profile.address || "no address"} · ${profile.stores?.length ?? 0} saved store${profile.stores?.length === 1 ? "" : "s"}`, 5],
-    ["Pantry", `${profile.pantry.length} items`, 6],
+    ["Kitchen", `${profile.housing} · ${profile.appliances.join(", ") || "no appliances"} · skill ${profile.skill}/3`, 3],
+    ["Dining", diningSummary(profile), 4],
+    ["Calendar", profile.calendar ? `Connected to ${profile.calendar.provider === "google" ? "Google Calendar" : "Outlook"} (${profile.calendar.account})` : "Not connected", 5],
+    ["Schedule", `${profile.schedule.length} blocks · weekdays ${fmt12(profile.wakeWeekday)}–${fmt12(profile.sleepWeekday)}`, 5],
+    ["Budget", `$${profile.weeklyBudget}/week · ${profile.address || "no address"} · ${profile.stores?.length ?? 0} saved store${profile.stores?.length === 1 ? "" : "s"}`, 6],
+    ["Pantry", `${profile.pantry.length} items`, 7],
   ];
   return (
     <div className="card">
@@ -290,7 +295,7 @@ function ProfileTab({ profile }: { profile: Profile }) {
           {rows.map(([k, v, s]) => (
             <tr key={k}>
               <th style={{ width: 110 }}>{k}</th>
-              <td style={{ textTransform: k === "Budget" || k === "Schedule" || k === "Calendar" ? "none" : "capitalize" }}>{v}</td>
+              <td style={{ textTransform: k === "Budget" || k === "Schedule" || k === "Calendar" || k === "Dining" ? "none" : "capitalize" }}>{v}</td>
               <td style={{ textAlign: "right" }}>
                 <Link className="btn sm" href={`/onboarding?step=${s}`}>
                   Edit
@@ -380,6 +385,7 @@ export default function Dashboard() {
           [
             ["today", "Day"],
             ["week", "Week"],
+            ["dining", "Dining"],
             ["groceries", "Groceries"],
             ["pantry", "Pantry"],
             ["profile", "Profile"],
@@ -399,6 +405,7 @@ export default function Dashboard() {
         <>
           {tab === "today" && <Today plan={plan} profile={profile} day={day} setDay={setDay} />}
           {tab === "week" && <Week plan={plan} />}
+          {tab === "dining" && <DiningTab profile={profile} plan={plan} setProfile={setProfile} rebuild={rebuild} busy={busy} />}
           {tab === "groceries" && <Groceries plan={plan} profile={profile} setProfile={setProfile} />}
           {tab === "pantry" && (
             <div className="card stack">

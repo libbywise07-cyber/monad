@@ -7,6 +7,7 @@ import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
 import AddressInput from "@/components/AddressInput";
 import CalendarConnect from "@/components/CalendarConnect";
+import DiningSetupEditor from "@/components/DiningSetupEditor";
 import { DEFAULT_PROFILE, loadProfile, requestPlan, saveProfile, savePlan } from "@/lib/store";
 import { nutritionTargets } from "@/lib/planner";
 import {
@@ -24,7 +25,7 @@ import {
   type Skill,
 } from "@/lib/types";
 
-const STEPS = ["About you", "Goals", "Diet", "Kitchen", "Schedule", "Budget & location", "Pantry"];
+const STEPS = ["About you", "Goals", "Diet", "Kitchen", "Dining", "Schedule", "Budget & location", "Pantry"];
 
 const HEALTH_GOALS = [
   "More energy for class",
@@ -284,20 +285,24 @@ export default function Onboarding() {
                 <Option key={v} v={v} cur={p.skill} set={(x) => up("skill", x)} title={t} sub={s} />
               ))}
             </div>
-            <div className="grid g2">
-              <div>
-                <label>Max time to cook one meal: {p.maxCookMin} min</label>
-                <input type="range" min={5} max={60} step={5} value={p.maxCookMin} onChange={(e) => up("maxCookMin", +e.target.value)} />
-              </div>
-              <div>
-                <label>Dining hall / house meal swipes per week</label>
-                <input type="number" min={0} max={21} value={p.diningSwipes} onChange={(e) => up("diningSwipes", +e.target.value)} />
-              </div>
+            <div>
+              <label>Max time to cook one meal: {p.maxCookMin} min</label>
+              <input type="range" min={5} max={60} step={5} value={p.maxCookMin} onChange={(e) => up("maxCookMin", +e.target.value)} />
             </div>
           </>
         )}
 
         {step === 4 && (
+          <>
+            <h2>Your dining hall</h2>
+            <p className="muted">
+              We read your dining hall&apos;s real menu and pick the healthiest plate for your goals, then track your swipes and points so they last the whole term.
+            </p>
+            <DiningSetupEditor value={p.dining} swipes={p.diningSwipes} onChange={(v) => up("dining", v)} onSwipes={(n) => up("diningSwipes", n)} />
+          </>
+        )}
+
+        {step === 5 && (
           <>
             <h2>Your weekly schedule</h2>
             <p className="muted">We only schedule meals in your free time. Add every class, shift, practice and study block.</p>
@@ -323,13 +328,13 @@ export default function Onboarding() {
           </>
         )}
 
-        {step === 5 && (
+        {step === 6 && (
           <>
             <h2>Budget & location</h2>
             <div>
               <label>Weekly grocery budget: ${p.weeklyBudget}</label>
               <input type="range" min={20} max={200} step={5} value={p.weeklyBudget} onChange={(e) => up("weeklyBudget", +e.target.value)} />
-              <p className="muted small">About ${(p.weeklyBudget / 7).toFixed(2)} a day. Dining swipes don&apos;t count toward this.</p>
+              <p className="muted small">About ${(p.weeklyBudget / 7).toFixed(2)} a day. Dining hall swipes and points don&apos;t count toward this.</p>
             </div>
             <div>
               <label htmlFor="address">Your address (or campus + city)</label>
@@ -345,7 +350,7 @@ export default function Onboarding() {
           </>
         )}
 
-        {step === 6 && (
+        {step === 7 && (
           <>
             <h2>What&apos;s already in your kitchen?</h2>
             <p className="muted">We plan around what you have so you buy less and waste less.</p>
