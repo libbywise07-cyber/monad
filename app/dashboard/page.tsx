@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
+import MealsToCalendar from "@/components/MealsToCalendar";
+import { ProviderMark } from "@/components/CalendarConnect";
 import { requestPlan, resetAll, useStored } from "@/lib/store";
 import { fmt12, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type Macros, type MealPlan, type PlannedMeal, type Profile } from "@/lib/types";
@@ -105,6 +107,12 @@ function Today({ plan, profile, day, setDay }: { plan: MealPlan; profile: Profil
 
   return (
     <div className="grid" style={{ gridTemplateColumns: "minmax(0,1fr)", gap: 16 }}>
+      {profile.calendar?.addMealsToCalendar ? (
+        <div className="row between">
+          <span className="muted small">Your plan follows your {profile.calendar.provider === "google" ? "Google" : "Outlook"} calendar.</span>
+          <MealsToCalendar link={profile.calendar} plan={plan} schedule={profile.schedule} day={day} />
+        </div>
+      ) : null}
       <div className="daypick">
         {DAYS.map((d, i) => (
           <button key={d} type="button" className={`chip ${i === day ? "on" : ""}`} onClick={() => setDay(i as DayIndex)}>
@@ -138,7 +146,7 @@ function Today({ plan, profile, day, setDay }: { plan: MealPlan; profile: Profil
               <div className="tl-item" key={`b${k}`}>
                 <div className="tl-time">{fmt12(it.b.start)}</div>
                 <div className="tl-busy">
-                  {it.b.label} <span style={{ fontWeight: 400 }}>· until {fmt12(it.b.end)}</span>
+                  {it.b.source ? <ProviderMark provider={it.b.source} /> : null} {it.b.label} <span style={{ fontWeight: 400 }}>· until {fmt12(it.b.end)}</span>
                 </div>
               </div>
             ) : (
@@ -252,6 +260,7 @@ function ProfileTab({ profile }: { profile: Profile }) {
     ["Goal", [profile.goal, ...profile.healthGoals].join(", "), 1],
     ["Diet", [profile.diet, ...profile.allergies.map((a) => `no ${a}`), profile.dislikes].filter(Boolean).join(", "), 2],
     ["Kitchen", `${profile.housing} · ${profile.appliances.join(", ") || "no appliances"} · skill ${profile.skill}/3 · ${profile.diningSwipes} swipes/wk`, 3],
+    ["Calendar", profile.calendar ? `Connected to ${profile.calendar.provider === "google" ? "Google Calendar" : "Outlook"} (${profile.calendar.account})` : "Not connected", 4],
     ["Schedule", `${profile.schedule.length} blocks · weekdays ${fmt12(profile.wakeWeekday)}–${fmt12(profile.sleepWeekday)}`, 4],
     ["Budget", `$${profile.weeklyBudget}/week · ${profile.address || "no address"}`, 5],
     ["Pantry", `${profile.pantry.length} items`, 6],
@@ -263,7 +272,7 @@ function ProfileTab({ profile }: { profile: Profile }) {
           {rows.map(([k, v, s]) => (
             <tr key={k}>
               <th style={{ width: 110 }}>{k}</th>
-              <td style={{ textTransform: k === "Budget" || k === "Schedule" ? "none" : "capitalize" }}>{v}</td>
+              <td style={{ textTransform: k === "Budget" || k === "Schedule" || k === "Calendar" ? "none" : "capitalize" }}>{v}</td>
               <td style={{ textAlign: "right" }}>
                 <Link className="btn sm" href={`/onboarding?step=${s}`}>
                   Edit

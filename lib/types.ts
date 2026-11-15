@@ -54,6 +54,17 @@ export interface ScheduleBlock {
   days: DayIndex[];
   start: string; // "HH:MM"
   end: string; // "HH:MM"
+  source?: CalendarProvider; // set when imported from a connected calendar
+}
+
+export type CalendarProvider = "google" | "outlook";
+export const CALENDAR_NAMES: Record<CalendarProvider, string> = { google: "Google Calendar", outlook: "Outlook Calendar" };
+
+export interface CalendarLink {
+  provider: CalendarProvider;
+  account: string;
+  connectedAt: string;
+  addMealsToCalendar: boolean;
 }
 
 export interface PantryItem {
@@ -89,6 +100,7 @@ export interface Profile {
   address: string;
   lat?: number; // set when the address is picked from suggestions or current location
   lon?: number;
+  calendar?: CalendarLink;
   pantry: PantryItem[];
 }
 

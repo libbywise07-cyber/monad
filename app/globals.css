@@ -170,3 +170,41 @@ details summary { cursor: pointer; font-weight: 600; }
 .ac-list li { padding: 9px 10px; border-radius: 8px; cursor: pointer; font-size: 14px; }
 .ac-list li.on, .ac-list li:hover { background: var(--brand-soft); }
 .ac-list li.muted { cursor: default; background: none; }
+
+/* calendar connect (mockup) */
+:root { --g: #1a73e8; --o: #0f6cbd; --meal-ev: #d9f0ec; --meal-ev-ink: #0b4f49; }
+@media (prefers-color-scheme: dark) { :root { --g: #8ab4f8; --o: #6cb8f6; --meal-ev: #123a36; --meal-ev-ink: #9ee6db; } }
+.cal-card { background: var(--bg); }
+.cal-btn { gap: 10px; }
+.cal-mark {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  width: 24px; height: 24px; border-radius: 7px; font-weight: 800; font-size: 13px; color: #fff;
+}
+.cal-mark.google { background: var(--g); }
+.cal-mark.outlook { background: var(--o); }
+@media (prefers-color-scheme: dark) { .cal-mark { color: #10161c; } }
+.tl-busy .cal-mark { width: 18px; height: 18px; font-size: 10px; border-radius: 5px; vertical-align: -3px; }
+.tag.cal-tag { margin-left: 4px; }
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50; background: rgba(10, 14, 18, 0.45);
+  display: flex; align-items: center; justify-content: center; padding: 16px;
+}
+.modal {
+  background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 18px;
+  width: min(520px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 22px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+}
+.demo-flag { font-size: 12px; font-weight: 600; background: var(--accent-soft); border-radius: 8px; padding: 6px 10px; }
+.perm-list, .found-list { list-style: none; padding: 0; margin: 10px 0 14px; display: grid; gap: 8px; }
+.perm-list li { display: grid; gap: 2px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.found-list li { padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; }
+.found-list .note { display: block; margin-top: 4px; color: var(--muted); font-style: italic; }
+.calview { position: relative; margin: 10px 0 0 44px; border-left: 1px solid var(--line); }
+.cal-hour { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--line); }
+.cal-hour span { position: absolute; left: -44px; top: -8px; font-size: 11px; color: var(--muted); width: 38px; text-align: right; }
+.cal-ev {
+  position: absolute; left: 8px; right: 4px; border-radius: 8px; padding: 2px 8px; font-size: 12px;
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+}
+.cal-ev.busy { background: var(--busy); color: var(--busy-ink); right: 42%; white-space: normal; }
+.cal-ev.meal { background: var(--meal-ev); color: var(--meal-ev-ink); border-left: 3px solid var(--brand); left: calc(58% + 4px); z-index: 1; }

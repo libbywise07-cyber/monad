@@ -6,6 +6,7 @@ import ScheduleEditor from "@/components/ScheduleEditor";
 import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
 import AddressInput from "@/components/AddressInput";
+import CalendarConnect from "@/components/CalendarConnect";
 import { DEFAULT_PROFILE, loadProfile, requestPlan, saveProfile, savePlan } from "@/lib/store";
 import { nutritionTargets } from "@/lib/planner";
 import {
@@ -300,6 +301,7 @@ export default function Onboarding() {
           <>
             <h2>Your weekly schedule</h2>
             <p className="muted">We only schedule meals in your free time. Add every class, shift, practice and study block.</p>
+            <CalendarConnect link={p.calendar} schedule={p.schedule} onChange={(calendar, schedule) => setP((x) => ({ ...x, calendar, schedule }))} />
             <div className="grid g2">
               <div>
                 <label>Weekday wake / sleep</label>
@@ -316,6 +318,7 @@ export default function Onboarding() {
                 </div>
               </div>
             </div>
+            <h3 style={{ marginBottom: 0 }}>Or add blocks yourself</h3>
             <ScheduleEditor value={p.schedule} onChange={(v) => up("schedule", v)} />
           </>
         )}

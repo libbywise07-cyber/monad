@@ -25,6 +25,17 @@ The dashboard has these tabs:
 - **Pantry:** rescan your fridge and rebuild the plan
 - **Profile:** edit any part of your sign-up answers
 
+## Calendar sync (mockup)
+
+On the Schedule step you can **Connect Google Calendar** or **Connect Outlook**. You then approve read-only access, review the events found (classes, shifts and practices are pre-checked; meals and one-time events are not), and they become busy time in your plan. After connecting, the Day tab can preview your meals as events on a separate "CampusFuel Meals" calendar.
+
+**This is a clickable mockup with sample events.** No real account is connected, and every screen is labeled "Demo preview". Screenshots are in [`mockups/`](mockups/).
+
+To make it real:
+- **Google:** create an OAuth client in Google Cloud and enable the Calendar API. Request the `calendar.readonly` scope to read events, and add `calendar.app.created` to create the meals calendar.
+- **Outlook:** register an app in Microsoft Entra ID and use Microsoft Graph with `Calendars.Read`, plus `Calendars.ReadWrite` to add meals.
+- Swap the sample events in `components/CalendarConnect.tsx` for the API response, keeping only recurring events.
+
 ## How it works
 
 - **AI planner** (`app/api/plan`): sends your profile, computed free windows and macro targets to Claude. Claude returns a structured 7-day plan, validated with Zod.

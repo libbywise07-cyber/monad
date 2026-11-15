@@ -79,6 +79,7 @@ export default function ScheduleEditor({ value, onChange }: { value: ScheduleBlo
               <tr key={b.id}>
                 <td>
                   <b>{b.label}</b> <span className="tag busy">{b.kind}</span>
+                  {b.source ? <span className="tag cal-tag">{b.source === "google" ? "Google" : "Outlook"}</span> : null}
                 </td>
                 <td>{b.days.map((d) => DAYS[d]).join(", ")}</td>
                 <td>
