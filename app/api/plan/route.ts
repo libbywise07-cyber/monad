@@ -2,7 +2,8 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { betaZodOutputFormat } from "@anthropic-ai/sdk/helpers/beta/zod";
 import { claude, describeError, hasClaudeCredentials, MODEL } from "@/lib/claude";
-import { buildRulePlan, freeWindows, groceryList, mealSlots, nutritionTargets, prepSession, sumMacros, toHHMM, toMin } from "@/lib/planner";
+import { priceGroceries } from "@/lib/prices";
+import { buildRulePlan, freeWindows, mealSlots, nutritionTargets, prepSession, sumMacros, toHHMM, toMin } from "@/lib/planner";
 import { DAYS, type DayIndex, type MealPlan, type Profile } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -18,7 +19,16 @@ const MealZ = z.object({
   source: z.enum(["cook", "dining", "prepped"]),
   macros: MacrosZ,
   cost: z.number().describe("USD grocery cost for this meal, excluding pantry items; 0 for dining hall"),
-  ingredients: z.array(z.object({ name: z.string(), qty: z.string(), cost: z.number(), aisle: z.string() })),
+  ingredients: z.array(
+    z.object({
+      name: z.string().describe("generic grocery name, e.g. 'eggs', 'rolled oats'"),
+      qty: z.string().describe("amount one serving uses, e.g. '2', '1/2 cup', '1 tbsp', '6 oz'"),
+      cost: z.number().describe("cost of just that amount, USD"),
+      aisle: z.string(),
+      packageSize: z.string().describe("the smallest common package a student would buy, e.g. '1 dozen', '16 oz jar', '1 lb pack'"),
+      packagePrice: z.number().describe("typical US store-brand price of that whole package, USD"),
+    }),
+  ),
   steps: z.array(z.string()),
   usesPantry: z.array(z.string()).describe("ingredient names taken from the user's pantry"),
   why: z.string().describe("one short sentence on why this meal fits this moment of their day"),
@@ -39,7 +49,9 @@ Hard rules:
 - Never use an ingredient that conflicts with the diet, allergies or dislikes.
 - Recipes must match the cooking skill level (1 = microwave/assembly only, 2 = follows simple recipes, 3 = confident cook) and respect the max cook time.
 - Prefer ingredients from the pantry and reuse ingredients across meals so groceries stay cheap.
-- Keep the week's grocery cost at or under the weekly budget. Use realistic US grocery prices per serving.
+- Keep the week's grocery bill at or under the weekly budget. The bill is priced by whole packages
+  (a dozen eggs, a 16 oz jar of peanut butter), not by the amount used, so reuse the same ingredients
+  across several meals and avoid buying a package for a single use. Use realistic US store-brand prices.
 - If the student has dining hall swipes, use up to that many per week as source "dining" (cost 0) on lunches/dinners, ideally on days with long breaks near the dining hall time.
 - Hit the daily calorie and macro targets within ~10%, especially protein.
 - Use the student's health goals to shape choices (e.g. fiber, iron, less added sugar, pre-practice fueling).
@@ -122,10 +134,15 @@ async function aiPlan(p: Profile): Promise<MealPlan> {
         const w = wins.find((w) => t >= toMin(w.start) && t < toMin(w.start) + w.minutes);
         return { ...m, windowMin: w ? toMin(w.start) + w.minutes - t : 0 };
       })
+      .map((m) => ({
+        ...m,
+        servings: 1,
+        ingredients: m.ingredients.map(({ packageSize, packagePrice, ...ing }) => ({ ...ing, pkg: packageSize, pkgPrice: packagePrice })),
+      }))
       .sort((a, b) => toMin(a.time) - toMin(b.time));
     return { day: d, meals, totals: sumMacros(meals) };
   });
-  const groceries = groceryList(days, p);
+  const groceries = priceGroceries(days, p.pantry);
   return {
     generatedAt: new Date().toISOString(),
     engine: "ai",

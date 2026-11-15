@@ -217,3 +217,8 @@ details summary { cursor: pointer; font-weight: 600; }
 table.stores tr.picked td { background: var(--brand-soft); }
 table.stores tr.picked td:first-child { border-top-left-radius: 8px; border-bottom-left-radius: 8px; }
 table.stores tr.picked td:last-child { border-top-right-radius: 8px; border-bottom-right-radius: 8px; }
+
+.grocery-row { display: grid; grid-template-columns: auto 1fr auto; gap: 10px; align-items: start; font-weight: 400; padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.grocery-row > span:nth-child(2) { min-width: 0; }
+.grocery-row .done { text-decoration: line-through; opacity: 0.6; }
+.grocery-price { font-variant-numeric: tabular-nums; font-weight: 600; }

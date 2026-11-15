@@ -107,9 +107,11 @@ export interface Profile {
 
 export interface Ingredient {
   name: string;
-  qty: string;
-  cost: number; // estimated USD for the amount bought
+  qty: string; // amount one serving uses, e.g. "1/2 cup"
+  cost: number; // rough cost of that amount (used only to keep meal choices on budget)
   aisle: string;
+  pkg?: string; // package you'd buy, when known (AI plans)
+  pkgPrice?: number; // price of that package
 }
 
 export interface Macros {
@@ -130,6 +132,7 @@ export interface PlannedMeal {
   macros: Macros;
   cost: number;
   ingredients: Ingredient[];
+  servings?: number; // portion multiplier for the ingredient amounts (default 1)
   steps: string[];
   usesPantry: string[];
   why: string;
@@ -144,8 +147,12 @@ export interface DayPlan {
 export interface GroceryItem {
   name: string;
   aisle: string;
-  cost: number;
+  pkg: string; // what to buy, e.g. "1 dozen" or "2 × 15 oz can"
+  packages: number;
+  cost: number; // price of the packages
   forMeals: number;
+  usage: string; // e.g. "you'll use 9 of 12"
+  estimated: boolean; // true when the item isn't in our price list
 }
 
 export interface MealPlan {

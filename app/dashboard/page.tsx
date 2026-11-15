@@ -57,7 +57,6 @@ function MealCard({ m }: { m: PlannedMeal }) {
           {m.source === "prepped" ? <span className="tag warn">🥡 prep ahead</span> : null}
           {m.portable ? <span className="tag">🎒 portable</span> : null}
           {m.prepMin ? <span className="tag">⏱ {m.prepMin}m</span> : null}
-          <span className="tag">${m.cost.toFixed(2)}</span>
         </div>
       </div>
       <p className="small" style={{ margin: "8px 0 0" }}>
@@ -213,7 +212,7 @@ function Groceries({ plan, profile, setProfile }: { plan: MealPlan; profile: Pro
             {over
               ? "A bit over budget. Try fewer cook-from-scratch meals, more dining swipes, or a lower-cost store."
               : `About $${(profile.weeklyBudget - plan.groceryTotal).toFixed(2)} under budget 🎉`}{" "}
-            Estimates assume you buy small packages and use leftovers across meals.
+            Priced by the package you buy at typical store-brand prices; leftovers carry into next week.
           </p>
         </div>
         {aisles.map((a) => (
@@ -222,14 +221,18 @@ function Groceries({ plan, profile, setProfile }: { plan: MealPlan; profile: Pro
             {plan.groceries
               .filter((g) => g.aisle === a)
               .map((g) => (
-                <label key={g.name} className="row" style={{ fontWeight: 400, justifyContent: "space-between", padding: "3px 0", flexWrap: "nowrap" }}>
-                  <span className="row" style={{ gap: 8, flexWrap: "nowrap" }}>
-                    <input type="checkbox" style={{ width: "auto" }} checked={!!checked[g.name]} onChange={(e) => setChecked({ ...checked, [g.name]: e.target.checked })} />
-                    <span style={{ textDecoration: checked[g.name] ? "line-through" : "none" }}>
-                      {g.name} <span className="muted small">· {g.forMeals} meal{g.forMeals > 1 ? "s" : ""}</span>
+                <label key={g.name} className="grocery-row">
+                  <input type="checkbox" style={{ width: "auto" }} checked={!!checked[g.name]} onChange={(e) => setChecked({ ...checked, [g.name]: e.target.checked })} />
+                  <span className={checked[g.name] ? "done" : ""}>
+                    <b>{g.name}</b>
+                    <span className="muted small" style={{ display: "block" }}>
+                      {g.pkg ? `${g.pkg}` : ""}
+                      {g.forMeals ? ` · for ${g.forMeals} meal${g.forMeals > 1 ? "s" : ""}` : ""}
+                      {g.usage ? ` · ${g.usage}` : ""}
+                      {g.estimated ? " · price estimated" : ""}
                     </span>
                   </span>
-                  <span className="muted small">${g.cost.toFixed(2)}</span>
+                  <span className="grocery-price">${g.cost.toFixed(2)}</span>
                 </label>
               ))}
           </div>

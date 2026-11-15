@@ -1,4 +1,5 @@
 import { RECIPES, type Recipe } from "./recipes";
+import { findProduct, priceGroceries } from "./prices";
 import type {
   DayIndex,
   DayPlan,
@@ -205,6 +206,7 @@ function toMeal(r: Recipe, slot: Slot, p: Profile, scale: number, why: string, s
       .reduce((a, x) => a + x.cost * s, 0)
       .toFixed(2),
     ingredients: r.ingredients.map((x) => ({ ...x, cost: +(x.cost * s).toFixed(2) })),
+    servings: s,
     steps: r.steps,
     usesPantry,
     why,
@@ -238,6 +240,8 @@ export function buildRulePlan(p: Profile): MealPlan {
   const targets = nutritionTargets(p);
   const allowed = RECIPES.filter((r) => recipeAllowed(r, p));
   const usage = new Map<string, number>();
+  const basket = new Set<string>(); // packages already on this week's list
+  const productKey = (name: string) => findProduct(name)?.pkg + "|" + (findProduct(name)?.match[0] ?? name.toLowerCase());
   let swipesLeft = p.diningSwipes;
   const dailyBudget = p.weeklyBudget / 7;
   const days: DayPlan[] = [];
@@ -270,6 +274,12 @@ export function buildRulePlan(p: Profile): MealPlan {
         const proteinRatio = (r.macros.protein * 4) / r.macros.kcal;
         let score = 0;
         score += pm * 6;
+        // Reusing a package already on the list is nearly free; a new package costs its full price.
+        for (const ing of r.ingredients) {
+          if (pantryMatches(r, p).includes(ing.name)) continue;
+          if (basket.has(productKey(ing.name))) score += 2.5;
+          else score -= Math.min(6, (findProduct(ing.name)?.price ?? 2.5) * 0.45);
+        }
         score -= (usage.get(r.id) || 0) * 9;
         score -= Math.max(0, cost * scale - dailyBudget * slot.share * 1.2) * 4;
         score -= Math.abs(1 - scale) * 6;
@@ -290,6 +300,7 @@ export function buildRulePlan(p: Profile): MealPlan {
       if (!best) continue;
       const scale = Math.min(1.75, Math.max(0.75, target / best.r.macros.kcal));
       usage.set(best.r.id, (usage.get(best.r.id) || 0) + 1);
+      for (const ing of best.r.ingredients) basket.add(productKey(ing.name));
       const preppable = best.r.prepMin > slot.windowMin - 10;
       const meal = toMeal(best.r, slot, p, scale, best.why, preppable ? "prepped" : "cook");
       spentToday += meal.cost;
@@ -299,7 +310,9 @@ export function buildRulePlan(p: Profile): MealPlan {
     days.push({ day: d, meals, totals: sumMacros(meals) });
   }
 
-  const groceries = groceryList(days, p);
+  trimToBudget(p, days, allowed);
+  for (const d of days) d.totals = sumMacros(d.meals);
+  const groceries = priceGroceries(days, p.pantry);
   const plan: MealPlan = {
     generatedAt: new Date().toISOString(),
     engine: "rules",
@@ -313,29 +326,112 @@ export function buildRulePlan(p: Profile): MealPlan {
   return plan;
 }
 
+// ---------- budget trimming ----------
+const weekCost = (days: DayPlan[], p: Profile) => priceGroceries(days, p.pantry).reduce((a, g) => a + g.cost, 0);
+
+function canFill(r: Recipe, m: PlannedMeal, p: Profile) {
+  if (!r.types.includes(m.type)) return false;
+  const timeAvail = (m.windowMin || 60) - 10;
+  const fitsTime = r.prepMin <= Math.min(timeAvail, p.maxCookMin) || (r.portable && r.prepMin <= 6);
+  const preppable = r.portable && r.prepMin > timeAvail;
+  return fitsTime || preppable;
+}
+
+/**
+ * Packages, not portions, drive the grocery bill. When the week is over budget:
+ *  1. Drop whole packages: for each costly item, try re-planning every meal that uses it.
+ *  2. Single swaps toward recipes that reuse packages already on the list.
+ * Protein per meal stays within 80% of the original, lunches/dinners repeat at most 4×/week and
+ * breakfasts/snacks at most 7× (people happily eat the same breakfast every day).
+ */
+function trimToBudget(p: Profile, days: DayPlan[], allowed: Recipe[]) {
+  const budget = p.weeklyBudget;
+  let total = weekCost(days, p);
+  const baseName = (m: PlannedMeal) => m.name.replace(/ \(×.*\)$/, "");
+  const countOf = (name: string) => days.reduce((n, d) => n + d.meals.filter((m) => baseName(m) === name).length, 0);
+  const cap = (m: PlannedMeal) => (m.type === "breakfast" || m.type === "snack" ? 7 : 4);
+  const keyOf = (ing: string) => findProduct(ing)?.pkg + "|" + (findProduct(ing)?.match[0] ?? ing.toLowerCase());
+  const meals = () => days.flatMap((d) => d.meals.map((m, i) => ({ d, i, m })));
+
+  const candidatesFor = (d: DayPlan, m: PlannedMeal, avoidKey?: string) =>
+    allowed
+      .filter((r) => r.name !== baseName(m) && canFill(r, m, p) && countOf(r.name) < cap(m))
+      .filter((r) => !d.meals.some((x) => x !== m && baseName(x) === r.name)) // no repeats within a day
+      .filter((r) => !avoidKey || !r.ingredients.some((x) => keyOf(x.name) === avoidKey))
+      .map((r) => {
+        const scale = Math.min(1.75, Math.max(0.75, m.macros.kcal / r.macros.kcal));
+        return { r, scale };
+      })
+      .filter(({ r, scale }) => r.macros.protein * scale >= m.macros.protein * 0.8);
+
+  const build = (m: PlannedMeal, r: Recipe, scale: number) => {
+    const slot = { type: m.type, time: toMin(m.time), windowMin: m.windowMin, share: 0 };
+    const meal = toMeal(r, slot, p, scale, "", m.source === "prepped" && r.portable ? "prepped" : "cook");
+    meal.why = m.windowMin < 30 ? `Only ${m.windowMin} min free — portable and quick.` : "Shares groceries with your other meals this week.";
+    return meal;
+  };
+
+  /** Replace meal i of day d with the candidate that gives the lowest week total. */
+  const bestSwap = (d: DayPlan, i: number, avoidKey?: string) => {
+    const m = d.meals[i];
+    let best: { meal: PlannedMeal; total: number } | null = null;
+    for (const { r, scale } of candidatesFor(d, m, avoidKey)) {
+      const cand = build(m, r, scale);
+      d.meals[i] = cand;
+      const t = weekCost(days, p);
+      d.meals[i] = m;
+      if (!best || t < best.total) best = { meal: cand, total: t };
+    }
+    return best;
+  };
+
+  for (let pass = 0; pass < 6 && total > budget; pass++) {
+    let improved = false;
+
+    // 1) drop whole packages, most expensive first
+    const items = priceGroceries(days, p.pantry).sort((a, b) => b.cost - a.cost);
+    for (const item of items) {
+      if (total <= budget) return;
+      const key = keyOf(item.name);
+      const users = meals().filter(({ m }) => m.source !== "dining" && m.ingredients.some((x) => keyOf(x.name) === key));
+      if (!users.length) continue;
+      const before = users.map(({ d, i }) => d.meals[i]);
+      let ok = true;
+      for (const { d, i } of users) {
+        const s = bestSwap(d, i, key);
+        if (!s) {
+          ok = false;
+          break;
+        }
+        d.meals[i] = s.meal;
+      }
+      const t = weekCost(days, p);
+      if (ok && t < total - 0.5) {
+        total = t;
+        improved = true;
+      } else users.forEach(({ d, i }, k) => (d.meals[i] = before[k]));
+    }
+
+    // 2) single swaps
+    for (const { d, i, m } of meals()) {
+      if (total <= budget) return;
+      if (m.source === "dining") continue;
+      const s = bestSwap(d, i);
+      if (s && s.total < total - 0.5) {
+        d.meals[i] = s.meal;
+        total = s.total;
+        improved = true;
+      }
+    }
+    if (!improved) break;
+  }
+}
+
 export function sumMacros(meals: PlannedMeal[]): Macros {
   return meals.reduce(
     (a, m) => ({ kcal: a.kcal + m.macros.kcal, protein: a.protein + m.macros.protein, carbs: a.carbs + m.macros.carbs, fat: a.fat + m.macros.fat }),
     { kcal: 0, protein: 0, carbs: 0, fat: 0 },
   );
-}
-
-export function groceryList(days: DayPlan[], p: Profile): GroceryItem[] {
-  const map = new Map<string, GroceryItem>();
-  for (const d of days)
-    for (const m of d.meals)
-      for (const ing of m.ingredients) {
-        if (m.usesPantry.includes(ing.name)) continue;
-        const key = ing.name.toLowerCase();
-        const g = map.get(key) || { name: ing.name, aisle: ing.aisle, cost: 0, forMeals: 0 };
-        g.cost += ing.cost;
-        g.forMeals += 1;
-        map.set(key, g);
-      }
-  void p;
-  return [...map.values()]
-    .map((g) => ({ ...g, cost: +Math.max(g.cost, 0.5).toFixed(2) }))
-    .sort((a, b) => a.aisle.localeCompare(b.aisle) || a.name.localeCompare(b.name));
 }
 
 export function prepSession(p: Profile, days: DayPlan[]): MealPlan["prepSession"] {

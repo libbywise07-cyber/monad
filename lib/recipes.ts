@@ -603,7 +603,7 @@ export const RECIPES: Recipe[] = [
     contains: [],
     portable: true,
     macros: { kcal: 210, protein: 10, carbs: 30, fat: 6 },
-    ingredients: [i("roasted chickpea snack", "1 pack", 0.9, "Snacks")],
+    ingredients: [i("roasted chickpea snack", "1 serving", 0.8, "Snacks")],
     steps: ["Store-bought pack — toss in your bag."],
   },
 ];
