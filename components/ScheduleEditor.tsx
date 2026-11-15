@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import NumberInput from "./NumberInput";
 import { DAYS, type DayIndex, type ScheduleBlock } from "@/lib/types";
 import { fmt12 } from "@/lib/planner";
 
@@ -98,14 +99,13 @@ export default function ScheduleEditor({ value, onChange, travelDefault = 10 }: 
                   {fmt12(b.start)}–{fmt12(b.end)}
                   <div className="row" style={{ gap: 4, flexWrap: "nowrap" }}>
                     <span className="muted small">travel</span>
-                    <input
-                      type="number"
+                    <NumberInput
                       min={0}
                       max={120}
                       aria-label={`Travel minutes for ${b.label}`}
                       title="Minutes to get there, each way"
                       value={b.travelMin ?? travelDefault}
-                      onChange={(e) => onChange(value.map((x) => (x.id === b.id ? { ...x, travelMin: +e.target.value } : x)))}
+                      onChange={(n) => onChange(value.map((x) => (x.id === b.id ? { ...x, travelMin: n } : x)))}
                       style={{ width: 64, padding: "2px 6px", fontSize: 13 }}
                     />
                     <span className="muted small">min</span>

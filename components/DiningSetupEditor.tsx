@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import NumberInput from "./NumberInput";
 import { diningAllowance, fmtPoints, usesPoints, usesSwipes, weeksLeft } from "@/lib/dining/budget";
 import { parseMenuLink, searchSchools } from "@/lib/dining/schools";
 import type { DiningHall, DiningSchoolRef, DiningSetup } from "@/lib/dining/types";
@@ -292,7 +293,7 @@ export default function DiningSetupEditor({ value: d, swipes, onChange, onSwipes
           {usesSwipes(d) ? (
             <div>
               <label>Meal swipes per week</label>
-              <input type="number" min={0} max={21} value={swipes} onChange={(e) => onSwipes(Math.max(0, Math.min(21, +e.target.value)))} />
+              <NumberInput min={0} max={21} value={swipes} onChange={(n) => onSwipes(Math.max(0, Math.min(21, n)))} />
             </div>
           ) : null}
 
@@ -323,7 +324,7 @@ export default function DiningSetupEditor({ value: d, swipes, onChange, onSwipes
                 </div>
                 <div>
                   <label>{weekly ? "Amount you get each week" : "Balance right now"}</label>
-                  <input type="number" min={0} step="0.01" value={d.pointsBalance} onChange={(e) => set("pointsBalance", Math.max(0, +e.target.value))} />
+                  <NumberInput min={0} decimals value={d.pointsBalance} onChange={(n) => set("pointsBalance", Math.max(0, n))} />
                 </div>
                 {!weekly ? (
                   <div>
@@ -360,13 +361,7 @@ export default function DiningSetupEditor({ value: d, swipes, onChange, onSwipes
                   {(["breakfast", "lunch", "dinner"] as const).map((m) => (
                     <div key={m}>
                       <label style={{ textTransform: "capitalize" }}>{m} price</label>
-                      <input
-                        type="number"
-                        min={0}
-                        step="0.25"
-                        value={d.doorPrice[m]}
-                        onChange={(e) => set("doorPrice", { ...d.doorPrice, [m]: Math.max(0, +e.target.value) })}
-                      />
+                      <NumberInput min={0} decimals value={d.doorPrice[m]} onChange={(n) => set("doorPrice", { ...d.doorPrice, [m]: Math.max(0, n) })} />
                     </div>
                   ))}
                 </div>
@@ -374,11 +369,11 @@ export default function DiningSetupEditor({ value: d, swipes, onChange, onSwipes
                 <div className="grid g2">
                   <div>
                     <label>Typical main dish price</label>
-                    <input type="number" min={0} step="0.25" value={d.itemPrice.main} onChange={(e) => set("itemPrice", { ...d.itemPrice, main: Math.max(0, +e.target.value) })} />
+                    <NumberInput min={0} decimals value={d.itemPrice.main} onChange={(n) => set("itemPrice", { ...d.itemPrice, main: Math.max(0, n) })} />
                   </div>
                   <div>
                     <label>Typical side price</label>
-                    <input type="number" min={0} step="0.25" value={d.itemPrice.side} onChange={(e) => set("itemPrice", { ...d.itemPrice, side: Math.max(0, +e.target.value) })} />
+                    <NumberInput min={0} decimals value={d.itemPrice.side} onChange={(n) => set("itemPrice", { ...d.itemPrice, side: Math.max(0, n) })} />
                   </div>
                   <p className="small muted" style={{ gridColumn: "1 / -1", margin: 0 }}>
                     When the menu lists prices we use those. Otherwise we use these estimates, and you can fix any dish&apos;s price on the Dining tab.

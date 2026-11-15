@@ -1,5 +1,6 @@
 "use client";
 import Link from "next/link";
+import NumberInput from "@/components/NumberInput";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import ScheduleEditor from "@/components/ScheduleEditor";
@@ -138,7 +139,7 @@ export default function Onboarding() {
             <div className="grid g3">
               <div>
                 <label>Age</label>
-                <input type="number" min={15} max={80} value={p.age} onChange={(e) => up("age", +e.target.value)} />
+                <NumberInput id="age" min={13} max={99} value={p.age} onChange={(n) => up("age", n)} />
               </div>
               <div>
                 <label>Sex (for energy estimate)</label>
@@ -150,15 +151,15 @@ export default function Onboarding() {
               </div>
               <div>
                 <label>Weight (lb)</label>
-                <input type="number" min={70} max={450} value={p.weightLb} onChange={(e) => up("weightLb", +e.target.value)} />
+                <NumberInput id="weight" min={70} max={500} value={p.weightLb} onChange={(n) => up("weightLb", n)} />
               </div>
               <div>
                 <label>Height (ft)</label>
-                <input type="number" min={4} max={7} value={ft} onChange={(e) => up("heightIn", +e.target.value * 12 + inch)} />
+                <NumberInput id="height-ft" min={3} max={8} value={ft} onChange={(n) => up("heightIn", n * 12 + inch)} />
               </div>
               <div>
                 <label>Height (in)</label>
-                <input type="number" min={0} max={11} value={inch} onChange={(e) => up("heightIn", ft * 12 + +e.target.value)} />
+                <NumberInput id="height-in" min={0} max={11} value={inch} onChange={(n) => up("heightIn", ft * 12 + n)} />
               </div>
             </div>
             <label>How active are you?</label>
