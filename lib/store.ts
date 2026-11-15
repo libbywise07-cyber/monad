@@ -25,6 +25,7 @@ export const DEFAULT_PROFILE: Profile = {
   appliances: HOUSING_DEFAULTS.dorm,
   skill: 1,
   maxCookMin: 20,
+  inCollege: true,
   diningSwipes: 0,
   dining: DEFAULT_DINING,
   wakeWeekday: "07:30",

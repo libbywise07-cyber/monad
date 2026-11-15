@@ -403,6 +403,7 @@ function checkSchool(s: DiningSchoolRef) {
 }
 
 export async function listHalls(s: DiningSchoolRef): Promise<DiningHall[]> {
+  if (s.provider === "none") throw new Error("No online menu found for this school yet. Paste your dining menu link to get dish-by-dish picks.");
   checkSchool(s);
   if (s.provider === "nutritionaddition") return naHalls(s.slug);
   if (s.provider === "nutrislice") {
@@ -414,6 +415,7 @@ export async function listHalls(s: DiningSchoolRef): Promise<DiningHall[]> {
 }
 
 export async function getMenu(s: DiningSchoolRef, hallId: string): Promise<DiningMenu> {
+  if (s.provider === "none") throw new Error("No online menu found for this school yet. Paste your dining menu link to get dish-by-dish picks.");
   checkSchool(s);
   if (s.provider === "nutritionaddition") return naMenu(s.slug, hallId);
   if (s.provider === "nutrislice") {

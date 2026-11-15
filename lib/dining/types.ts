@@ -1,7 +1,8 @@
 // Dining hall menus, meal plans (swipes / points) and the shapes shared by client and server.
 import type { Allergen } from "../types";
 
-export type DiningProvider = "nutritionaddition" | "nutrislice" | "link";
+// "none" = we know the school but haven't found an online menu for it yet.
+export type DiningProvider = "nutritionaddition" | "nutrislice" | "link" | "none";
 export type DiningMeal = "breakfast" | "lunch" | "dinner" | "all";
 
 /** Where a school's menus live. `slug` is the provider's school id (e.g. "uoregon", "uga"). */
@@ -58,7 +59,12 @@ export interface DiningSetup {
   payment: "none" | "swipes" | "points" | "both";
   /** What their school calls points: "Points", "Dining Dollars", "Duck Bucks", "Flex"… */
   pointsLabel: string;
+  /** For a term balance: what's left now. For a weekly allowance: how much you get each week. */
   pointsBalance: number;
+  /** "term" = one balance for the semester/quarter, spread evenly over the weeks left.
+   *  "week" = a weekly allowance that resets, so the plan uses all of it every week. */
+  balancePeriod: "term" | "week";
+  termType: "semester" | "quarter";
   /** Last day of the term; the balance is spread evenly over the weeks left. */
   termEnd: string;
   /** "door" = fixed price to walk in (all-you-care-to-eat). "items" = pay per item (à la carte). */
@@ -70,12 +76,16 @@ export interface DiningSetup {
   priceOverrides: Record<string, number>;
   /** Points actually spent, newest first. */
   log: { date: string; amount: number; note: string }[];
+  /** What the automatic lookup found about this school's plan. */
+  planInfo?: { notes: string; sources: string[]; checked: string };
 }
 
 export const DEFAULT_DINING: DiningSetup = {
   payment: "none",
   pointsLabel: "Points",
   pointsBalance: 0,
+  balancePeriod: "term",
+  termType: "semester",
   termEnd: "",
   pricing: "items",
   doorPrice: { breakfast: 9, lunch: 12, dinner: 14 },

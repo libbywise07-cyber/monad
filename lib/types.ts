@@ -91,6 +91,7 @@ export interface Profile {
   appliances: Appliance[];
   skill: Skill;
   maxCookMin: number;
+  inCollege: boolean; // false = skip dining halls and meal plans
   diningSwipes: number; // per week
   dining: DiningSetup; // school, dining hall, points balance and how the meal plan charges
   wakeWeekday: string;

@@ -3,7 +3,8 @@ import type { MealType } from "../types";
 import { DEFAULT_DINING, type DiningSetup } from "./types";
 
 const WEEK = 7 * 24 * 3600 * 1000;
-export const DEFAULT_TERM_WEEKS = 10;
+// Typical weeks left when we don't know the term end date (about half a term).
+export const DEFAULT_WEEKS = { semester: 8, quarter: 5 } as const;
 
 export const withDiningDefaults = (d?: Partial<DiningSetup>): DiningSetup => ({
   ...DEFAULT_DINING,
@@ -17,16 +18,36 @@ export const withDiningDefaults = (d?: Partial<DiningSetup>): DiningSetup => ({
 export const usesSwipes = (d: DiningSetup) => d.payment === "swipes" || d.payment === "both";
 export const usesPoints = (d: DiningSetup) => d.payment === "points" || d.payment === "both";
 
-/** Whole weeks left in the term (at least 1). Without a term end date we assume a 10-week quarter. */
+/** Whole weeks left in the term (at least 1). Without an end date we guess from semester vs quarter. */
 export function weeksLeft(d: DiningSetup, now = new Date()): number {
-  if (!d.termEnd) return DEFAULT_TERM_WEEKS;
+  const fallback = DEFAULT_WEEKS[d.termType] ?? DEFAULT_WEEKS.semester;
+  if (!d.termEnd) return fallback;
   const end = new Date(`${d.termEnd}T23:59:59`);
-  if (Number.isNaN(end.getTime())) return DEFAULT_TERM_WEEKS;
+  if (Number.isNaN(end.getTime())) return fallback;
   return Math.max(1, Math.ceil((end.getTime() - now.getTime()) / WEEK));
 }
 
-/** Points the student can spend per week and still make it to the end of the term. */
-export const weeklyPointsBudget = (d: DiningSetup) => (usesPoints(d) ? Math.max(0, d.pointsBalance) / weeksLeft(d) : 0);
+/**
+ * Points to spend per week. A term balance is split evenly over the weeks left;
+ * a weekly allowance resets, so the whole amount is this week's budget.
+ */
+export function weeklyPointsBudget(d: DiningSetup): number {
+  if (!usesPoints(d)) return 0;
+  const bal = Math.max(0, d.pointsBalance);
+  return d.balancePeriod === "week" ? bal : bal / weeksLeft(d);
+}
+
+/** Monday of the current week, as YYYY-MM-DD. */
+export function weekStart(now = new Date()): string {
+  const x = new Date(now);
+  x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
+  return `${x.getFullYear()}-${String(x.getMonth() + 1).padStart(2, "0")}-${String(x.getDate()).padStart(2, "0")}`;
+}
+
+export const spentThisWeek = (d: DiningSetup, now = new Date()) => {
+  const ws = weekStart(now);
+  return d.log.filter((l) => l.date >= ws).reduce((a, l) => a + l.amount, 0);
+};
 
 /** Typical cost of one dining meal in points (used to decide how many meals points can cover). */
 export function typicalMealPoints(d: DiningSetup, type: MealType = "lunch"): number {

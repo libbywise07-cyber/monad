@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
 import DiningSetupEditor from "./DiningSetupEditor";
-import { diningAllowance, fmtPoints, usesPoints, usesSwipes, weeksLeft, withDiningDefaults } from "@/lib/dining/budget";
+import { diningAllowance, fmtPoints, spentThisWeek as spentWeek, usesPoints, usesSwipes, weeksLeft, withDiningDefaults } from "@/lib/dining/budget";
 import { itemPoints, rankItems } from "@/lib/dining/pick";
 import type { DiningMenu, DiningSchoolRef, DiningSetup } from "@/lib/dining/types";
 import { fmt12, nutritionTargets } from "@/lib/planner";
@@ -15,7 +15,7 @@ export function diningSummary(p: Profile): string {
   if (d.payment === "none") return p.diningSwipes ? `${p.diningSwipes} swipes/wk` : "No meal plan";
   const parts = [d.hall ? `${d.hall.name}, ${d.school?.name}` : d.school?.name || "No school picked"];
   if (usesSwipes(d)) parts.push(`${p.diningSwipes} swipes/wk`);
-  if (usesPoints(d)) parts.push(`${fmtPoints(d.pointsBalance, d.pointsLabel)} left`);
+  if (usesPoints(d)) parts.push(d.balancePeriod === "week" ? `${fmtPoints(d.pointsBalance, d.pointsLabel)}/week` : `${fmtPoints(d.pointsBalance, d.pointsLabel)} left`);
   return parts.join(" · ");
 }
 
@@ -28,40 +28,55 @@ function Balance({ profile, plan, setProfile }: { profile: Profile; plan: MealPl
   const planned = plan.dining?.points ?? 0;
   const save = (dining: DiningSetup) => setProfile({ ...profile, dining });
   const today = ymd(new Date());
-  const weekStart = (() => {
-    const x = new Date();
-    x.setDate(x.getDate() - ((x.getDay() + 6) % 7));
-    return ymd(x);
-  })();
-  const spentThisWeek = d.log.filter((l) => l.date >= weekStart).reduce((a, l) => a + l.amount, 0);
+  const weekly = d.balancePeriod === "week";
+  const spentThisWeek = spentWeek(d);
 
+  // A term balance goes down as you spend. A weekly allowance stays the same; we just count this week's spending.
   const log = () => {
     const n = +amt;
     if (!(n > 0)) return;
-    save({ ...d, pointsBalance: +Math.max(0, d.pointsBalance - n).toFixed(2), log: [{ date: today, amount: n, note: note.trim() }, ...d.log].slice(0, 100) });
+    const entry = { date: today, amount: n, note: note.trim() };
+    save({ ...d, pointsBalance: weekly ? d.pointsBalance : +Math.max(0, d.pointsBalance - n).toFixed(2), log: [entry, ...d.log].slice(0, 100) });
     setAmt("");
     setNote("");
   };
   const undo = (k: number) => {
     const l = d.log[k];
-    save({ ...d, pointsBalance: +(d.pointsBalance + l.amount).toFixed(2), log: d.log.filter((_, i) => i !== k) });
+    save({ ...d, pointsBalance: weekly ? d.pointsBalance : +(d.pointsBalance + l.amount).toFixed(2), log: d.log.filter((_, i) => i !== k) });
   };
 
   return (
     <div className="card stack">
       <h2 style={{ margin: 0 }}>Your {label}</h2>
       <div className="grid g3">
-        <div>
-          <div className="small muted">Balance</div>
-          <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtPoints(d.pointsBalance, "")}</div>
-        </div>
-        <div>
-          <div className="small muted">Safe to spend per week</div>
-          <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtPoints(+allow.pointsPerWeek.toFixed(2), "")}</div>
-          <div className="small muted">
-            {weeksLeft(d)} weeks left{d.termEnd ? ` (term ends ${d.termEnd})` : " (assumed)"}
-          </div>
-        </div>
+        {weekly ? (
+          <>
+            <div>
+              <div className="small muted">You get each week</div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtPoints(d.pointsBalance, "")}</div>
+              <div className="small muted">Resets weekly</div>
+            </div>
+            <div>
+              <div className="small muted">Left this week</div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtPoints(+Math.max(0, d.pointsBalance - spentThisWeek).toFixed(2), "")}</div>
+              <div className="small muted">Use it before it resets</div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div>
+              <div className="small muted">Balance</div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtPoints(d.pointsBalance, "")}</div>
+            </div>
+            <div>
+              <div className="small muted">Safe to spend per week</div>
+              <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtPoints(+allow.pointsPerWeek.toFixed(2), "")}</div>
+              <div className="small muted">
+                {weeksLeft(d)} weeks left{d.termEnd ? ` (term ends ${d.termEnd})` : ` (guess for a ${d.termType})`}
+              </div>
+            </div>
+          </>
+        )}
         <div>
           <div className="small muted">This plan uses</div>
           <div style={{ fontSize: 28, fontWeight: 800 }}>{fmtPoints(planned, "")}</div>
@@ -78,6 +93,12 @@ function Balance({ profile, plan, setProfile }: { profile: Profile; plan: MealPl
         <div className={`bar ${spentThisWeek > allow.pointsPerWeek ? "over" : ""}`}>
           <div style={{ width: `${allow.pointsPerWeek ? Math.min(100, (spentThisWeek / allow.pointsPerWeek) * 100) : 0}%` }} />
         </div>
+        {weekly && spentThisWeek < allow.pointsPerWeek && new Date().getDay() === 0 ? (
+          <p className="small" style={{ marginTop: 6 }}>
+            Your {label} reset after today. Grab fruit, yogurt or a salad with the {fmtPoints(+(allow.pointsPerWeek - spentThisWeek).toFixed(2), label)} left so they don&apos;t go to
+            waste.
+          </p>
+        ) : null}
         {spentThisWeek > allow.pointsPerWeek ? (
           <p className="small err" style={{ marginTop: 6 }}>
             You&apos;re over this week&apos;s pace. Rebuild your plan and we&apos;ll lean on cheaper plates and home meals.
@@ -304,8 +325,8 @@ export default function DiningTab({
           <DiningSetupEditor
             value={draft?.dining ?? d}
             swipes={draft?.swipes ?? profile.diningSwipes}
-            onChange={(v) => setDraft({ dining: v, swipes: draft?.swipes ?? profile.diningSwipes })}
-            onSwipes={(n) => setDraft({ dining: draft?.dining ?? d, swipes: n })}
+            onChange={(v) => setDraft((x) => ({ dining: v, swipes: x?.swipes ?? profile.diningSwipes }))}
+            onSwipes={(n) => setDraft((x) => ({ dining: x?.dining ?? d, swipes: n }))}
           />
           <div className="row">
             <button

@@ -64,6 +64,10 @@ export async function POST(req: Request) {
   if (!profile) return NextResponse.json({ error: "profile required" }, { status: 400 });
 
   profile.dining = withDiningDefaults(profile.dining);
+  if (profile.inCollege === false) {
+    profile.diningSwipes = 0;
+    profile.dining.payment = "none";
+  }
 
   let plan: MealPlan;
   if (!hasClaudeCredentials()) {

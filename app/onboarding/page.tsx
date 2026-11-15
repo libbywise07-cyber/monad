@@ -76,9 +76,11 @@ export default function Onboarding() {
   const finish = async () => {
     setBusy(true);
     setErr("");
-    saveProfile(p);
+    // Not in college: no dining hall meals in the plan.
+    const final = p.inCollege ? p : { ...p, diningSwipes: 0, dining: { ...p.dining, payment: "none" as const } };
+    saveProfile(final);
     try {
-      const plan = await requestPlan(p);
+      const plan = await requestPlan(final);
       savePlan(plan);
       router.push("/dashboard");
     } catch (e) {
@@ -122,6 +124,13 @@ export default function Onboarding() {
             <div>
               <label>First name</label>
               <input value={p.name} onChange={(e) => up("name", e.target.value)} placeholder="Alex" autoFocus />
+            </div>
+            <div>
+              <label>Are you in college right now?</label>
+              <div className="option-grid">
+                <Option v="yes" cur={p.inCollege ? "yes" : "no"} set={() => up("inCollege", true)} title="Yes, I'm a student" sub="We'll use your dining hall and meal plan" />
+                <Option v="no" cur={p.inCollege ? "yes" : "no"} set={() => up("inCollege", false)} title="Not right now" sub="Plans use your own kitchen only" />
+              </div>
             </div>
             <div className="grid g3">
               <div>
@@ -295,10 +304,22 @@ export default function Onboarding() {
         {step === 4 && (
           <>
             <h2>Your dining hall</h2>
-            <p className="muted">
-              We read your dining hall&apos;s real menu and pick the healthiest plate for your goals, then track your swipes and points so they last the whole term.
-            </p>
-            <DiningSetupEditor value={p.dining} swipes={p.diningSwipes} onChange={(v) => up("dining", v)} onSwipes={(n) => up("diningSwipes", n)} />
+            {p.inCollege ? (
+              <>
+                <p className="muted">
+                  Tell us where you go to school. We&apos;ll look up how your meal plan works, read your dining hall&apos;s real menu, pick the healthiest plate for your goals,
+                  and keep your swipes and points on track.
+                </p>
+                <DiningSetupEditor value={p.dining} swipes={p.diningSwipes} onChange={(v) => up("dining", v)} onSwipes={(n) => up("diningSwipes", n)} />
+              </>
+            ) : (
+              <div className="notice row between">
+                <span>You said you&apos;re not in college right now, so we&apos;ll skip dining halls and plan around your own kitchen.</span>
+                <button type="button" className="btn sm" onClick={() => up("inCollege", true)}>
+                  Actually, I am
+                </button>
+              </div>
+            )}
           </>
         )}
 

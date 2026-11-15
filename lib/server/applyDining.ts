@@ -104,6 +104,14 @@ export async function applyDining(plan: MealPlan, p: Profile): Promise<MealPlan>
     pointsPerWeek: +allow.pointsPerWeek.toFixed(2),
     pointsLabel: label,
   };
+  // A weekly allowance resets, so make sure the student knows to spend what's left.
+  const leftover = allow.pointsPerWeek - pointsSpent;
+  if (usesPoints(setup) && setup.balancePeriod === "week" && leftover >= 2) {
+    plan.tips = [
+      `Your ${label} reset every week. This plan leaves about ${fmtPoints(+leftover.toFixed(2), label)} unspent, so use them on fruit, yogurt, a salad or a healthy snack at ${plan.dining.hall} before they reset.`,
+      ...plan.tips,
+    ];
+  }
   if (menuError) plan.note = [plan.note, `Couldn't load your dining hall menu (${menuError}), so dining meals are general guidelines.`].filter(Boolean).join(" ");
   return plan;
 }
