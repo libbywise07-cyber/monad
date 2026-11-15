@@ -1,6 +1,7 @@
 "use client";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MAX_STORES, type SavedStore } from "@/lib/types";
+import { directionsUrl } from "@/lib/storeLinks";
 
 interface Store extends SavedStore {
   hours: string;
@@ -215,6 +216,14 @@ export default function StoreFinder({ address, lat, lon, auto = false, listTotal
                       <td style={{ whiteSpace: "nowrap" }}>
                         {s.distanceMi} mi
                         <div className="muted small">{s.driveMin != null ? `${s.driveMin} min drive` : kind === "straight" ? "straight line" : ""}</div>
+                        <div className="row travel-links" onClick={(e) => e.stopPropagation()}>
+                          <a href={directionsUrl(s, "transit", { lat, lon, address })} target="_blank" rel="noreferrer" title="Bus directions in Google Maps">
+                            🚌 Bus
+                          </a>
+                          <a href={directionsUrl(s, "walking", { lat, lon, address })} target="_blank" rel="noreferrer" title="Walking directions in Google Maps">
+                            🚶 Walk
+                          </a>
+                        </div>
                       </td>
                       <td style={{ whiteSpace: "nowrap" }}>
                         {s.priceTier}

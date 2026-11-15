@@ -23,7 +23,19 @@ The dashboard has these tabs:
 - **Week:** an overview of all seven days
 - **Groceries:** a checklist grouped by aisle, the cost against your budget, and nearby stores
 - **Pantry:** rescan your fridge and rebuild the plan
-- **Profile:** edit any part of your sign-up answers
+- **Profile:** edit any part of your sign-up answers, see why your targets are what they are, pick a theme, and un-hide meals
+
+More features:
+- **Activity-aware calories:** add daily steps and workouts (lifting, running, practice…) with intensity. Calories burned are added on the days you train.
+- **Travel time:** minutes to get to each class or shift count as busy, so meals never land while you're walking.
+- **Why these numbers:** a plain-language breakdown of calories (resting, everyday movement, workouts, goal) and of protein, carbs and fat.
+- **Meal feedback:** "↻ New meal" swaps a single meal. "Don't show again" asks what was wrong (taste, an ingredient, too long, not filling), hides the meal, and future plans learn from it.
+- **Grocery page:** pick which of your stores you're shopping at, check items off (remembered), copy the list, open each item on that store's own website, and get bus, walk, bike or drive directions.
+- **Skip for now** on any sign-up step, and **6 color themes** with light and dark mode.
+
+## Calendar file import (real, no sign-in)
+
+On the Schedule step, **Import a calendar file (.ics)** reads a file exported from Google Calendar, Outlook, Canvas or Apple Calendar. Weekly repeating events become schedule blocks (classes, shifts and practices are pre-checked); finished terms and all-day events are skipped. The file is read in the browser and never uploaded. Try it with [`mockups/sample-calendar.ics`](mockups/sample-calendar.ics).
 
 ## Calendar sync (mockup)
 

@@ -7,6 +7,7 @@ import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
 import AddressInput from "@/components/AddressInput";
 import CalendarConnect from "@/components/CalendarConnect";
+import IcsImport from "@/components/IcsImport";
 import DiningSetupEditor from "@/components/DiningSetupEditor";
 import ActivityEditor from "@/components/ActivityEditor";
 import NutritionExplainer from "@/components/NutritionExplainer";
@@ -345,6 +346,7 @@ export default function Onboarding() {
           <>
             <h2>Your weekly schedule</h2>
             <p className="muted">We only schedule meals in your free time. Add every class, shift, practice and study block.</p>
+            <IcsImport schedule={p.schedule} onChange={(schedule) => up("schedule", schedule)} />
             <CalendarConnect link={p.calendar} schedule={p.schedule} onChange={(calendar, schedule) => setP((x) => ({ ...x, calendar, schedule }))} />
             <div className="grid g2">
               <div>

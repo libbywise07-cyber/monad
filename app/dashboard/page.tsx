@@ -4,6 +4,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
+import GroceryList from "@/components/GroceryList";
 import NutritionExplainer from "@/components/NutritionExplainer";
 import ThemePicker from "@/components/ThemePicker";
 import MealsToCalendar from "@/components/MealsToCalendar";
@@ -282,58 +283,9 @@ function Week({ plan }: { plan: MealPlan }) {
 
 function Groceries({ plan, profile, setProfile }: { plan: MealPlan; profile: Profile; setProfile: (p: Profile) => void }) {
   const best = [...(profile.stores ?? [])].sort((a, b) => a.priceFactor - b.priceFactor || a.distanceMi - b.distanceMi)[0];
-  const [checked, setChecked] = useState<Record<string, boolean>>({});
-  const over = plan.groceryTotal > profile.weeklyBudget;
-  const aisles = [...new Set(plan.groceries.map((g) => g.aisle))];
   return (
     <div className="grid g2" style={{ alignItems: "start" }}>
-      <div className="card stack">
-        <div className="row between">
-          <h2 style={{ margin: 0 }}>Grocery list</h2>
-          <button type="button" className="btn sm noprint" onClick={() => window.print()}>
-            Print
-          </button>
-        </div>
-        <div>
-          <div className="row between small">
-            <b>Estimated total</b>
-            <span>
-              ${plan.groceryTotal.toFixed(2)} / ${profile.weeklyBudget}
-            </span>
-          </div>
-          <div className={`bar ${over ? "over" : ""}`}>
-            <div style={{ width: `${Math.min(100, (plan.groceryTotal / profile.weeklyBudget) * 100)}%` }} />
-          </div>
-          <p className="small muted" style={{ marginTop: 6 }}>
-            {over
-              ? "A bit over budget. Try fewer cook-from-scratch meals, more dining swipes, or a lower-cost store."
-              : `About $${(profile.weeklyBudget - plan.groceryTotal).toFixed(2)} under budget 🎉`}{" "}
-            Priced by the package you buy at typical store-brand prices; leftovers carry into next week.
-          </p>
-        </div>
-        {aisles.map((a) => (
-          <div key={a}>
-            <h3 style={{ marginBottom: 4 }}>{a}</h3>
-            {plan.groceries
-              .filter((g) => g.aisle === a)
-              .map((g) => (
-                <label key={g.name} className="grocery-row">
-                  <input type="checkbox" style={{ width: "auto" }} checked={!!checked[g.name]} onChange={(e) => setChecked({ ...checked, [g.name]: e.target.checked })} />
-                  <span className={checked[g.name] ? "done" : ""}>
-                    <b>{g.name}</b>
-                    <span className="muted small" style={{ display: "block" }}>
-                      {g.pkg ? `${g.pkg}` : ""}
-                      {g.forMeals ? ` · for ${g.forMeals} meal${g.forMeals > 1 ? "s" : ""}` : ""}
-                      {g.usage ? ` · ${g.usage}` : ""}
-                      {g.estimated ? " · price estimated" : ""}
-                    </span>
-                  </span>
-                  <span className="grocery-price">${g.cost.toFixed(2)}</span>
-                </label>
-              ))}
-          </div>
-        ))}
-      </div>
+      <GroceryList plan={plan} profile={profile} />
       <div className="card stack noprint">
         <h2 style={{ margin: 0 }}>Your stores</h2>
         {profile.address ? (
