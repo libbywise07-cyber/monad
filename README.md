@@ -37,16 +37,26 @@ More features:
 
 On the Schedule step, **Import a calendar file (.ics)** reads a file exported from Google Calendar, Outlook, Canvas or Apple Calendar. Weekly repeating events become schedule blocks (classes, shifts and practices are pre-checked); finished terms and all-day events are skipped. The file is read in the browser and never uploaded. Try it with [`mockups/sample-calendar.ics`](mockups/sample-calendar.ics).
 
-## Calendar sync (mockup)
+## Calendar sync
 
-On the Schedule step you can **Connect Google Calendar** or **Connect Outlook**. You then approve read-only access, review the events found (classes, shifts and practices are pre-checked; meals and one-time events are not), and they become busy time in your plan. After connecting, the Day tab can preview your meals as events on a separate "CampusFuel Meals" calendar.
+On the Schedule step you can **Connect Google Calendar** or **Connect Outlook**. You review the events found (repeating classes, shifts and practices are pre-checked; meals and one-time events are not), and the checked ones become busy time in your plan.
 
-**This is a clickable mockup with sample events.** No real account is connected, and every screen is labeled "Demo preview". Screenshots are in [`mockups/`](mockups/).
+**Works with no setup:** students paste their calendar's *Secret address in iCal format* (Google Calendar → Settings → their calendar → Integrate calendar). `app/api/ics` downloads that feed (only from `calendar.google.com` and Outlook hosts) and `lib/server/ics.ts` expands it. It handles weekly and daily repeats, skipped dates, moved or cancelled classes, and time zones. The link is saved only in the browser, and the prep picker uses it to check live busy times.
 
-To make it real:
-- **Google:** create an OAuth client in Google Cloud and enable the Calendar API. Request the `calendar.readonly` scope to read events, and add `calendar.app.created` to create the meals calendar.
-- **Outlook:** register an app in Microsoft Entra ID and use Microsoft Graph with `Calendars.Read`, plus `Calendars.ReadWrite` to add meals.
-- Swap the sample events in `components/CalendarConnect.tsx` for the API response, keeping only recurring events.
+**Automatic sync:** with the private link connected, the dashboard re-reads the calendar on open, when the tab regains focus, and every 15 minutes (`components/CalendarSync.tsx`, `lib/calendarSync.ts`). Moved events are updated, new repeating events are added and deleted ones are removed. Events the student unchecked and blocks they typed themselves are left alone. If anything changed, the meal plan rebuilds and keeps the prep time the student picked. There's no server, so syncing only happens while the app is open; Google can also take a few hours to publish changes to the link.
+
+**Private or school calendars without a secret address** (some school admins turn it off): students can upload Google Calendar's export (Settings → Import & export → Export, a .zip of .ics files). It is unzipped and read in the browser (`importFromFiles` in `lib/googleCalendar.ts`) and never sent to the server. The next two months of busy times are saved so prep suggestions avoid one-off events too.
+
+**Optional, Google sign-in:** once `NEXT_PUBLIC_GOOGLE_CLIENT_ID` is set, the button uses real Google sign-in instead of the pasted link. Sign-in happens in the browser with Google Identity Services and the read-only `calendar.readonly` scope. The app reads the next two weeks from your visible calendars, groups repeating events into weekly blocks, and keeps nothing on a server (`lib/googleCalendar.ts`).
+**Meal prep times:** on the Day tab, **Pick a prep time** suggests up to six slots in the next week. They fit your free windows, weekend afternoons come first, and with Google connected they're checked against your live calendar (`freeBusy`), so one-off events like exams count. You can also choose your own time. **Add to Google Calendar** creates the event on your main calendar, with the prep tasks and a 30-minute reminder, using the `calendar.events` scope; Google asks for this permission the first time. Without a client ID, it opens Google Calendar with the event pre-filled instead.
+
+Set up Google (about 5 minutes):
+1. In [Google Cloud Console](https://console.cloud.google.com/), create a project, then go to **APIs & Services → Library** and enable **Google Calendar API**.
+2. Go to **OAuth consent screen**: choose *External*, fill in the app name and your email, add the scopes `.../auth/calendar.readonly` and `.../auth/calendar.events`, and add your Google account under **Test users**.
+3. Go to **Credentials → Create credentials → OAuth client ID**: choose *Web application* and add `http://localhost:3000` (and your deployed URL) under **Authorized JavaScript origins**.
+4. Put the client ID in `.env.local` as `NEXT_PUBLIC_GOOGLE_CLIENT_ID=...` and restart `npm run dev`.
+
+Still demo only, labeled "Demo preview": **Outlook**, and adding planned meals to a "CampusFuel Meals" calendar. Screenshots are in [`mockups/`](mockups/). Outlook needs an app in Microsoft Entra ID with Microsoft Graph `Calendars.Read`. Writing meals would need Google's `calendar.app.created` scope or Graph `Calendars.ReadWrite`.
 
 ## How it works
 

@@ -503,3 +503,22 @@ body::before {
 .tips { background: var(--t-sky); border-radius: var(--radius-sm); padding: 14px 16px; font-size: 14px; }
 .tips ul { margin: 6px 0 0; padding-left: 18px; }
 .tips li + li { margin-top: 3px; }
+/* Meal prep time picker */
+.prep-card { padding: 14px 16px; }
+.slot-list { display: grid; gap: 8px; }
+.slot {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px; width: 100%;
+  text-align: left; font: inherit; color: var(--ink); background: var(--card);
+  border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; cursor: pointer;
+}
+.slot:hover { border-color: var(--brand); }
+.slot.on { border-color: var(--brand); background: var(--brand-soft); box-shadow: inset 0 0 0 1px var(--brand); }
+.paste-steps { margin: 8px 0 10px; padding-left: 20px; display: grid; gap: 4px; }
+.upload-alt { border-top: 1px solid var(--line); margin: 10px 0; padding-top: 6px; }
+.upload-alt input[type="file"] { width: 100%; }
+
+/* Calendar auto-sync */
+.sync-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+.sync-bar .cal-mark { width: 18px; height: 18px; font-size: 10px; border-radius: 5px; }
+.sync-bar .btn { margin-left: auto; }
+.sync-news { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }

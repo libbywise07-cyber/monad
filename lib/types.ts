@@ -56,6 +56,7 @@ export interface ScheduleBlock {
   start: string; // "HH:MM"
   end: string; // "HH:MM"
   source?: CalendarProvider | "file"; // set when imported from a connected calendar or a calendar file
+  calKey?: string; // which calendar event this came from, so syncing can update or remove it
   travelMin?: number; // minutes to get there (and back); defaults to the profile's travelMin
   intensity?: Intensity; // for workouts and practices: drives calories burned
   activity?: string; // e.g. "Running", "Lifting" (workouts)
@@ -77,6 +78,10 @@ export interface CalendarLink {
   account: string;
   connectedAt: string;
   addMealsToCalendar: boolean;
+  icsUrl?: string; // private iCal link, when connected without Google sign-in (kept only in this browser)
+  busy?: [number, number][]; // from an uploaded export: busy times (epoch ms) for the next ~2 months
+  lastSyncedAt?: string; // last automatic or manual sync
+  ignored?: string[]; // calendar events the student unchecked; auto-sync won't re-add them
 }
 
 export interface PantryItem {
@@ -186,7 +191,14 @@ export interface MealPlan {
   days: DayPlan[];
   groceries: GroceryItem[];
   groceryTotal: number;
-  prepSession?: { day: DayIndex; time: string; durationMin: number; tasks: string[] };
+  prepSession?: {
+    day: DayIndex;
+    time: string;
+    durationMin: number;
+    tasks: string[];
+    scheduledAt?: string; // ISO date-time once the student picks a specific prep slot
+    eventLink?: string; // Google Calendar event, once added
+  };
   tips: string[];
   dining?: {
     hall: string;

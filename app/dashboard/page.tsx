@@ -1,13 +1,15 @@
 "use client";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import PantryEditor from "@/components/PantryEditor";
 import StoreFinder from "@/components/StoreFinder";
 import GroceryList from "@/components/GroceryList";
 import NutritionExplainer from "@/components/NutritionExplainer";
 import ThemePicker from "@/components/ThemePicker";
 import MealsToCalendar from "@/components/MealsToCalendar";
+import PrepScheduler from "@/components/PrepScheduler";
+import CalendarSync from "@/components/CalendarSync";
 import MealFeedback, { REASON_LABEL, type Feedback } from "@/components/MealFeedback";
 import DiningTab, { diningSummary, hasMealPlan } from "@/components/DiningTab";
 import Icon, { type IconName } from "@/components/Icons";
@@ -449,6 +451,7 @@ function Today({
           <MealsToCalendar link={profile.calendar} plan={plan} schedule={profile.schedule} day={day} />
         </div>
       ) : null}
+      <PrepScheduler profile={profile} plan={plan} onPlan={setPlan} />
       <div className="datepick" role="tablist" aria-label="Day">
         {DAYS.map((_, k) => (k + todayIdx()) % 7).map((i) => (
           <button
@@ -663,6 +666,7 @@ export default function Dashboard() {
   const [day, setDay] = useState<DayIndex>(todayIdx());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const pendingRebuild = useRef<Profile | null>(null);
 
   useEffect(() => {
     if (profile === null) router.replace("/onboarding");
@@ -672,11 +676,17 @@ export default function Dashboard() {
     setBusy(true);
     setErr("");
     try {
-      setPlan(await requestPlan(p));
+      const next = await requestPlan(p);
+      // Keep a prep time the student already picked (and maybe put on their calendar).
+      const picked = plan?.prepSession?.scheduledAt && Date.parse(plan.prepSession.scheduledAt) > Date.now() ? plan.prepSession : undefined;
+      setPlan(picked ? { ...next, prepSession: { ...picked, tasks: next.prepSession?.tasks ?? picked.tasks } } : next);
     } catch (e) {
       setErr(e instanceof Error ? e.message : "Failed to build plan");
     } finally {
       setBusy(false);
+      const again = pendingRebuild.current;
+      pendingRebuild.current = null;
+      if (again) void rebuild(again);
     }
   };
 
@@ -720,6 +730,15 @@ export default function Dashboard() {
       ) : null}
       {plan?.note ? <div className="notice" style={{ marginBottom: 14 }}>{plan.note}</div> : null}
       {err ? <p className="err">{err}</p> : null}
+      <CalendarSync
+        profile={profile}
+        onSynced={(p, changed) => {
+          setProfile(p);
+          if (!changed) return;
+          if (busy) pendingRebuild.current = p; // finish the current build first, then redo it
+          else void rebuild(p);
+        }}
+      />
 
       <nav className="bottom-nav" role="tablist" aria-label="Sections">
         {nav.map(([t, label, icon]) => (
