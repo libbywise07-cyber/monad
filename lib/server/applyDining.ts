@@ -58,6 +58,7 @@ export async function applyDining(plan: MealPlan, p: Profile): Promise<MealPlan>
         setup,
         target: m.macros,
         pay,
+        mealType: m.type,
         // Spread what's left of this week's points over the point meals still to come.
         pointsCap:
           pay === "points" && setup.pricing === "items"
@@ -68,9 +69,6 @@ export async function applyDining(plan: MealPlan, p: Profile): Promise<MealPlan>
       if (plate) {
         const points = pay === "swipe" ? 0 : setup.pricing === "door" ? typicalMealPoints(setup, m.type) : +plate.totals.points.toFixed(2);
         const t = plate.totals;
-        const highlights = [`${Math.round(t.protein)}g protein`, `${Math.round(t.kcal)} kcal`];
-        if (t.fiber >= 6) highlights.push(`${Math.round(t.fiber)}g fiber`);
-        if (t.veg) highlights.push("includes veggies/fruit");
         next = {
           ...m,
           name: plate.picks.map((x) => (x.servings > 1 ? `${x.name} ×${x.servings}` : x.name)).join(" + "),
@@ -79,7 +77,7 @@ export async function applyDining(plan: MealPlan, p: Profile): Promise<MealPlan>
             (x) =>
               `${x.station !== "Menu" ? `${x.station}: ` : ""}${x.name}${x.servings > 1 ? ` (${x.servings} servings)` : ""} · ${x.kcal} kcal, ${x.protein}g protein${pay === "points" && setup.pricing === "items" ? ` · ${fmtPoints(x.points, label)}` : ""}`,
           ),
-          why: `Best match at ${menu.hall.name} for ${GOAL_WORDS[p.goal]}: ${highlights.join(", ")}.`,
+          why: `Best match at ${menu.hall.name} for ${GOAL_WORDS[p.goal]}: ${plate.reasons.join("; ")}.`,
           dining: { hall: menu.hall.name, pay, points, items: plate.picks, dated: menu.dated },
         };
       }

@@ -48,7 +48,7 @@ Hard rules:
 - Every meal time must fall inside one of that day's free windows. Never schedule food during a class or other busy block.
 - Total prep + eating time must fit the window. If a window is short (<25 min) use a portable, no-cook or pre-prepped meal (source "prepped" if it is made during the weekly prep session).
 - Only use the appliances listed. A dorm with only a microwave means no stovetop recipes.
-- Never use an ingredient that conflicts with the diet, allergies or dislikes.
+- Never use an ingredient that conflicts with the diet, allergies or dislikes. Favor their favorite foods and cuisines when they fit the other rules.
 - Recipes must match the cooking skill level (1 = microwave/assembly only, 2 = follows simple recipes, 3 = confident cook) and respect the max cook time.
 - Prefer ingredients from the pantry and reuse ingredients across meals so groceries stay cheap.
 - Keep the week's grocery bill at or under the weekly budget. The bill is priced by whole packages
@@ -102,6 +102,7 @@ async function aiPlan(p: Profile): Promise<MealPlan> {
     diet: p.diet,
     allergies: p.allergies,
     dislikes: p.dislikes || "none",
+    favoriteFoods: p.likes || "none given",
     housing: p.housing,
     appliances: p.appliances,
     cookingSkill: p.skill,

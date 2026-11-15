@@ -87,6 +87,7 @@ export interface Profile {
   diet: Diet;
   allergies: Allergen[];
   dislikes: string;
+  likes: string; // favorite foods and cuisines, comma separated
   housing: Housing;
   appliances: Appliance[];
   skill: Skill;

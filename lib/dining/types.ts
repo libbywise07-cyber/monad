@@ -35,6 +35,7 @@ export interface DiningItem {
   sugar?: number;
   sodium?: number; // mg
   satFat?: number;
+  iron?: number; // mg
   vegetarian: boolean;
   vegan: boolean;
   glutenFree: boolean;

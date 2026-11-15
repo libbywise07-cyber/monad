@@ -280,7 +280,7 @@ function ProfileTab({ profile }: { profile: Profile }) {
   const rows: [string, string, number][] = [
     ["About", `${profile.age} · ${Math.floor(profile.heightIn / 12)}'${profile.heightIn % 12}" · ${profile.weightLb} lb · ${profile.activity}`, 0],
     ["Goal", [profile.goal, ...profile.healthGoals].join(", "), 1],
-    ["Diet", [profile.diet, ...profile.allergies.map((a) => `no ${a}`), profile.dislikes].filter(Boolean).join(", "), 2],
+    ["Diet", [profile.diet, ...profile.allergies.map((a) => `no ${a}`), profile.dislikes && `won't eat: ${profile.dislikes}`, profile.likes && `loves: ${profile.likes}`].filter(Boolean).join(", "), 2],
     ["Kitchen", `${profile.housing} · ${profile.appliances.join(", ") || "no appliances"} · skill ${profile.skill}/3`, 3],
     ["Dining", diningSummary(profile), 4],
     ["Calendar", profile.calendar ? `Connected to ${profile.calendar.provider === "google" ? "Google Calendar" : "Outlook"} (${profile.calendar.account})` : "Not connected", 5],

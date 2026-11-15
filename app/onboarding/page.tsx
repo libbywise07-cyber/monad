@@ -249,6 +249,11 @@ export default function Onboarding() {
               <label>Foods you won&apos;t eat (comma separated)</label>
               <input value={p.dislikes} onChange={(e) => up("dislikes", e.target.value)} placeholder="mushrooms, tuna, olives" />
             </div>
+            <div>
+              <label>Foods and cuisines you love (comma separated)</label>
+              <input value={p.likes} onChange={(e) => up("likes", e.target.value)} placeholder="chicken, salmon, rice bowls, Mexican, Indian" />
+              <p className="muted small">We favor these when picking recipes and dining hall dishes.</p>
+            </div>
           </>
         )}
 

@@ -200,8 +200,7 @@ function MenuBrowser({ profile, setProfile }: { profile: Profile; setProfile: (p
         </div>
       </div>
       <p className="small muted" style={{ margin: 0 }}>
-        {menu?.dated ? "Today's menu" : "Everything this location serves"}, ranked for your goals: most protein and fiber per calorie, less sodium, saturated fat and sugar. Dishes that
-        break your diet or allergies are hidden.
+        {menu?.dated ? "Today's menu" : "Everything this location serves"}, ranked for your health goals and the foods you love. Dishes that break your diet, allergies or dislikes are hidden.
         {priced ? ` Tap a price to fix it; we'll use your number from now on.` : ""}
       </p>
       {loading ? (
@@ -225,7 +224,7 @@ function MenuBrowser({ profile, setProfile }: { profile: Profile; setProfile: (p
               </tr>
             </thead>
             <tbody>
-              {list.map(({ item: i, kind }) => (
+              {list.map(({ item: i, kind, tags }) => (
                 <tr key={i.id + i.name}>
                   <td>
                     <b>{i.name}</b>
@@ -235,6 +234,15 @@ function MenuBrowser({ profile, setProfile }: { profile: Profile; setProfile: (p
                       {i.vegan ? " · vegan" : i.vegetarian ? " · vegetarian" : ""}
                       {i.serving ? ` · ${i.serving}` : ""}
                     </div>
+                    {tags.length ? (
+                      <div className="row" style={{ gap: 4, marginTop: 3 }}>
+                        {tags.map((t) => (
+                          <span key={t} className={`tag ${t === "you love it" ? "warn" : ""}`} style={{ fontSize: 11 }}>
+                            {t}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
                   </td>
                   <td style={{ textAlign: "right" }}>{i.kcal}</td>
                   <td style={{ textAlign: "right" }}>{Math.round(i.protein)}g</td>

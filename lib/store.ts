@@ -21,6 +21,7 @@ export const DEFAULT_PROFILE: Profile = {
   diet: "omnivore",
   allergies: [],
   dislikes: "",
+  likes: "",
   housing: "dorm",
   appliances: HOUSING_DEFAULTS.dorm,
   skill: 1,
