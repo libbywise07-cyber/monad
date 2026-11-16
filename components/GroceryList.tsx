@@ -1,4 +1,5 @@
 "use client";
+import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { directionsUrl, storeSearchUrl } from "@/lib/storeLinks";
 import { cheapestBrand, savingsTips } from "@/lib/storeBrands";
@@ -87,6 +88,13 @@ export default function GroceryList({ plan, profile }: { plan: MealPlan; profile
 
   return (
     <div className="card stack">
+      <Link href="/checkout" className="monad-cta noprint">
+        <span>
+          <b>Checkout &amp; pay on Monad</b>
+          <span className="small">Pickup or delivery · money held safely until you get your groceries</span>
+        </span>
+        <span aria-hidden>→</span>
+      </Link>
       <div className="row between">
         <h2 style={{ margin: 0 }}>Grocery list</h2>
         <div className="row noprint" style={{ gap: 6 }}>

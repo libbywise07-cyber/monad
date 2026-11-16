@@ -713,6 +713,9 @@ export default function Dashboard() {
           <Link href="/" className="brand hide-sm" style={{ marginRight: 6 }} aria-label="CampusFuel home">
             campus<span>fuel</span>
           </Link>
+          <Link href="/orders" className="btn sm" title="Your grocery orders on Monad">
+            Orders
+          </Link>
           <button type="button" className="icon-btn dark" onClick={() => rebuild(profile)} disabled={busy} aria-label="Build a new plan" title="New plan">
             {busy ? <span className="spinner" /> : <Icon name="refresh" />}
           </button>

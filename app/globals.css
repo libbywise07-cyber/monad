@@ -522,3 +522,22 @@ body::before {
 .sync-bar .cal-mark { width: 18px; height: 18px; font-size: 10px; border-radius: 5px; }
 .sync-bar .btn { margin-left: auto; }
 .sync-news { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
+
+/* ---------- Monad checkout ---------- */
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
+.wallet-bar { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
+.monad-dot { width: 10px; height: 10px; border-radius: 50%; background: #836ef9; box-shadow: 0 0 0 3px rgba(131, 110, 249, 0.25); display: inline-block; }
+.monad-cta { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-decoration: none; color: #fff; background: linear-gradient(135deg, #6e54ff, #836ef9); border-radius: 14px; padding: 12px 16px; font-size: 18px; }
+.monad-cta span span { display: block; opacity: 0.85; font-size: 13px; }
+.monad-cta:hover { filter: brightness(1.06); }
+.order-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.order-steps li { font-size: 12px; color: var(--muted); display: grid; gap: 6px; align-content: start; }
+.order-steps .dot { height: 6px; border-radius: 99px; background: var(--line); }
+.order-steps li.done .dot { background: #836ef9; }
+.order-steps li.now { color: var(--ink); font-weight: 600; }
+.order-steps li.now .dot { background: linear-gradient(90deg, #836ef9, #c4b8ff); animation: pulse 1.2s ease-in-out infinite; }
+.order-steps li.done { color: var(--ink); }
+@keyframes pulse { 50% { opacity: 0.5; } }
+@media (prefers-reduced-motion: reduce) { .order-steps li.now .dot { animation: none; } }
+@media (max-width: 520px) { .order-steps { grid-template-columns: 1fr 1fr; } }
+.code-box { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow-x: auto; white-space: pre; margin: 0; }
