@@ -657,6 +657,11 @@ export default function Dashboard() {
   const router = useRouter();
   const { profile, plan, setProfile, setPlan } = useStored();
   const [tab, setTab] = useState<Tab>("today");
+  // Open a specific tab from a link, e.g. /dashboard?tab=groceries (used by "Back to groceries").
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get("tab") as Tab | null;
+    if (t && NAV.some(([k]) => k === t)) setTab(t);
+  }, []);
   // The Dining tab only shows for students on a meal plan.
   const showDining = profile ? hasMealPlan(profile) : false;
   const nav = NAV.filter(([t]) => t !== "dining" || showDining);

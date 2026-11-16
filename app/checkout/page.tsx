@@ -1,81 +1,127 @@
 "use client";
+// Checkout with Monad: the week's grocery list → pickup or delivery → pay into escrow onchain.
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
-import WalletBar, { useWallet } from "@/components/WalletBar";
+import { MonadHeader, useRoleAddress, OrderSummary, StatusTimeline, TxLink, useInterval, WalletCard } from "@/components/monad/MonadUI";
+import { cheapestBrand } from "@/lib/storeBrands";
 import { useStored } from "@/lib/store";
-import { cartAddress, connectWallet, friendlyError, placeOrder, storeAddress, storeNameOf, txUrl, usdToMon, type OrderDetails } from "@/lib/monad/client";
-import { DELIVERY_FEE_USD, USD_PER_MON } from "@/lib/monad/config";
-import type { Address } from "viem";
+import { fmtUsd, isDeployed, toUnits } from "@/lib/monad/config";
+import {
+  explain,
+  getOrder,
+  handoffHash,
+  itemsHash,
+  listStores,
+  newHandoffCode,
+  orderIdFromTx,
+  prepareToPay,
+  saveCode,
+  saveItems,
+  writeCheckout,
+  type CartLine,
+  type OnchainOrder,
+} from "@/lib/monad/client";
 
-const SLOTS = ["Today 5–6pm", "Today 6–7pm", "Today 7–8pm", "Tomorrow 10–11am", "Tomorrow 12–1pm", "Tomorrow 5–6pm"];
+const DELIVERY_FEE = 3.99;
+const TIPS = [0, 1, 2, 3, 5];
+
+function loadChecked(planId: string): Record<string, boolean> {
+  try {
+    return JSON.parse(localStorage.getItem("campusfuel.checked.v1") || "{}")[planId] ?? {};
+  } catch {
+    return {};
+  }
+}
 
 export default function Checkout() {
-  const router = useRouter();
   const { profile, plan } = useStored();
-  const w = useWallet();
-  const stores = profile?.stores ?? [];
-  const [storeId, setStoreId] = useState("");
-  const [method, setMethod] = useState<"pickup" | "delivery">("pickup");
-  const [slot, setSlot] = useState(SLOTS[0]);
-  const [address, setAddress] = useState("");
-  const [skip, setSkip] = useState<Record<string, boolean>>({});
-  const [busy, setBusy] = useState<"" | "wallet" | "chain">("");
+  const [storeParam, setStoreParam] = useState<string | null>(null);
+  const [stores, setStores] = useState<{ id: number; name: string }[] | null>(null);
+  const [storeId, setStoreId] = useState<number | null>(null);
+  const [kind, setKind] = useState<0 | 1>(1);
+  const [tip, setTip] = useState(2);
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState("");
   const [err, setErr] = useState("");
-  const [tx, setTx] = useState("");
-  const [partner, setPartner] = useState<string | null>(null);
-  const configured = Boolean(cartAddress() && storeAddress());
+  const [placed, setPlaced] = useState<{ id: bigint; hash: string; ms: number; code: string } | null>(null);
+  const [order, setOrder] = useState<OnchainOrder | null>(null);
+  const student = useRoleAddress("student");
 
   useEffect(() => {
-    if (!storeId && stores[0]) setStoreId([...stores].sort((a, b) => a.priceFactor - b.priceFactor)[0].id);
-    if (!address && profile?.address) setAddress(profile.address);
-  }, [stores, storeId, profile, address]);
-
-  // Which store wallet receives the payment on Monad (the demo partner store).
-  useEffect(() => {
-    const a = storeAddress();
-    if (a && cartAddress())
-      storeNameOf(a as Address)
-        .then((n) => setPartner(n || null))
-        .catch(() => setPartner(null));
+    setStoreParam(new URLSearchParams(window.location.search).get("store"));
+    if (isDeployed) listStores().then(setStores).catch(() => setStores([]));
+    else setStores([]);
   }, []);
 
-  const store = stores.find((s) => s.id === storeId);
-  const factor = store?.priceFactor ?? 1;
-  const items = useMemo(() => plan?.groceries ?? [], [plan]);
-  const chosen = items.filter((g) => !skip[g.name]);
-  const subtotal = chosen.reduce((a, g) => a + g.cost * factor, 0);
-  const fee = method === "delivery" ? DELIVERY_FEE_USD : 0;
-  const total = Math.round((subtotal + fee) * 100) / 100;
-  const mon = usdToMon(total);
+  // The grocery store the student picked on the Groceries tab (prices and brands follow it).
+  const shopAt = profile?.stores?.find((s) => s.id === storeParam) ?? profile?.stores?.[0];
+  const factor = shopAt?.priceFactor ?? 1;
+
+  // Default the onchain store to the one whose name matches where they're shopping.
+  useEffect(() => {
+    if (!stores?.length || storeId != null) return;
+    const want = shopAt?.name.toLowerCase().split(" ")[0] ?? "";
+    setStoreId((stores.find((s) => want && s.name.toLowerCase().includes(want)) ?? stores[stores.length - 1]).id);
+  }, [stores, storeId, shopAt]);
+
+  const cart: CartLine[] = useMemo(() => {
+    if (!plan) return [];
+    const done = loadChecked(plan.generatedAt);
+    return plan.groceries
+      .filter((g) => !done[g.name])
+      .map((g) => {
+        const brand = cheapestBrand(shopAt?.name, g.aisle, g.name);
+        return { name: brand && !/brand$/i.test(brand) ? `${brand} ${g.name}` : g.name, pkg: g.pkg, price: +(g.cost * factor).toFixed(2) };
+      });
+  }, [plan, factor, shopAt]);
+
+  const subtotal = +cart.reduce((a, c) => a + c.price, 0).toFixed(2);
+  const fee = kind === 1 ? DELIVERY_FEE : 0;
+  const total = subtotal + fee + tip;
 
   const pay = async () => {
+    if (storeId == null || !student) return;
+    setBusy(true);
     setErr("");
-    if (!chosen.length) return setErr("Pick at least one item.");
-    if (method === "delivery" && !address.trim()) return setErr("Add a delivery address.");
     try {
-      setBusy("wallet");
-      const from = w.account ?? (await connectWallet());
-      const details: OrderDetails = {
-        store: store ? store.name : partner || "Campus grocery",
-        where: store?.address || undefined,
-        method,
-        slot,
-        address: method === "delivery" ? address.trim() : undefined,
-        name: profile?.name || undefined,
-        items: chosen.map((g) => [g.name, g.pkg, Math.round(g.cost * factor * 100) / 100]),
-        subtotal: Math.round(subtotal * 100) / 100,
-        fee,
-        total,
-        rate: USD_PER_MON,
-      };
-      setBusy("chain");
-      const r = await placeOrder(from, storeAddress() as Address, details);
-      setTx(r.hash);
-      router.push(`/orders${r.id ? `?id=${r.id}&tx=${r.hash}` : ""}`);
+      const units = toUnits(subtotal) + toUnits(fee) + toUnits(tip);
+      await prepareToPay(units, setStep);
+      const code = newHandoffCode();
+      setStep("Paying with Monad");
+      const { hash, ms } = await writeCheckout("student", "placeOrder", [
+        BigInt(storeId),
+        kind,
+        toUnits(subtotal),
+        toUnits(fee),
+        toUnits(tip),
+        itemsHash(cart),
+        handoffHash(student, code),
+      ]);
+      const id = await orderIdFromTx(hash);
+      saveCode(id, code);
+      saveItems(id, cart);
+      setPlaced({ id, hash, ms, code });
     } catch (e) {
-      setErr(friendlyError(e));
-      setBusy("");
+      setErr(explain(e));
+    } finally {
+      setBusy(false);
+      setStep("");
+    }
+  };
+
+  useInterval(() => {
+    if (placed) getOrder(placed.id).then(setOrder).catch(() => {});
+  }, 1000, Boolean(placed));
+
+  const cancel = async () => {
+    if (!placed) return;
+    setBusy(true);
+    try {
+      await writeCheckout("student", "cancel", [placed.id]);
+    } catch (e) {
+      setErr(explain(e));
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -83,151 +129,147 @@ export default function Checkout() {
 
   return (
     <main className="wrap narrow">
-      <nav className="row between" style={{ marginBottom: 14 }}>
-        <Link href="/dashboard" className="btn sm">
-          ← Back to plan
-        </Link>
-        <Link href="/orders" className="btn sm ghost">
-          My orders
-        </Link>
-      </nav>
-      <h1 style={{ fontSize: 30 }}>Checkout</h1>
-      <p className="muted">Pay the store on Monad. Your money is held safely until you have your groceries, then it goes to the store.</p>
+      <MonadHeader title="checkout with Monad" sub="Pay for this week's groceries in one tap. Your money waits in escrow until you get your order." />
+      {student ? <WalletCard role="student" label="Your wallet" address={student} tick={placed ? 1 : 0} /> : null}
 
-      {!configured ? (
-        <div className="notice">
-          The Monad store isn&apos;t set up on this browser yet. <Link href="/monad">Open Monad setup</Link> to deploy the contract and register the demo store
-          (about 2 minutes).
-        </div>
-      ) : null}
-
-      {!plan || !items.length ? (
-        <div className="card">
-          <p>
-            No grocery list yet. <Link href="/dashboard">Build your plan</Link> first.
-          </p>
-        </div>
-      ) : (
-        <div className="stack">
-          <section className="card stack">
-            <h3 style={{ margin: 0 }}>1. Store</h3>
-            {stores.length ? (
-              <select aria-label="Store" value={storeId} onChange={(e) => setStoreId(e.target.value)}>
-                {stores.map((s) => (
-                  <option key={s.id} value={s.id}>
-                    {s.name} · {s.priceTier} · {s.distanceMi} mi
-                  </option>
-                ))}
-              </select>
-            ) : (
-              <p className="small muted" style={{ margin: 0 }}>
-                No saved stores. You&apos;re ordering from {partner ?? "our demo partner store"}. Save your stores on the Groceries tab to choose one.
-              </p>
-            )}
-            {partner ? (
-              <p className="small muted" style={{ margin: 0 }}>
-                Payment goes to <b>{partner}</b>, a CampusFuel partner store on Monad testnet.
-              </p>
-            ) : null}
-          </section>
-
-          <section className="card stack">
-            <h3 style={{ margin: 0 }}>2. Pickup or delivery</h3>
-            <div className="option-grid">
-              <button type="button" className={`option ${method === "pickup" ? "on" : ""}`} onClick={() => setMethod("pickup")}>
-                <b>🛍️ Pickup</b>
-                <small>Free · {store?.address || "at the store"}</small>
-              </button>
-              <button type="button" className={`option ${method === "delivery" ? "on" : ""}`} onClick={() => setMethod("delivery")}>
-                <b>🚚 Delivery</b>
-                <small>${DELIVERY_FEE_USD.toFixed(2)} · to your door</small>
-              </button>
+      {placed ? (
+        <section className="card stack" style={{ marginTop: 14 }}>
+          <div className="paid-banner">
+            <b>Paid {fmtUsd(total)}</b>
+            <TxLink hash={placed.hash} ms={placed.ms} />
+          </div>
+          {order ? <OrderSummary order={order} storeName={stores?.find((s) => s.id === order.storeId)?.name} /> : null}
+          {order ? <StatusTimeline order={order} /> : <p className="muted small">Loading order status…</p>}
+          {order && order.status < 5 ? (
+            <div className="handoff">
+              <div className="small muted">Your handoff code: show it to the {kind === 0 ? "store at pickup" : "driver at your door"}</div>
+              <div className="handoff-code">{placed.code}</div>
+              <div className="small muted">Only a hash of this code is on Monad, so nobody can finish your order without you.</div>
             </div>
-            {method === "delivery" ? (
-              <div>
-                <label htmlFor="deliver-to">Deliver to</label>
-                <input id="deliver-to" value={address} onChange={(e) => setAddress(e.target.value)} placeholder="2125 Franklin Blvd, Eugene, OR 97401" />
-              </div>
-            ) : null}
-            <div>
-              <label htmlFor="slot">Time</label>
-              <select id="slot" value={slot} onChange={(e) => setSlot(e.target.value)}>
-                {SLOTS.map((s) => (
-                  <option key={s}>{s}</option>
-                ))}
-              </select>
-            </div>
-          </section>
-
-          <section className="card stack">
-            <div className="row between">
-              <h3 style={{ margin: 0 }}>3. Items</h3>
-              <span className="muted small">
-                {chosen.length} of {items.length}
-              </span>
-            </div>
-            <div>
-              {items.map((g) => (
-                <label key={g.name} className="grocery-row" style={{ cursor: "pointer" }}>
-                  <input type="checkbox" style={{ width: "auto" }} checked={!skip[g.name]} onChange={(e) => setSkip({ ...skip, [g.name]: !e.target.checked })} />
-                  <span>
-                    <b>{g.name}</b>
-                    <span className="muted small" style={{ display: "block" }}>
-                      {g.pkg}
-                    </span>
-                  </span>
-                  <span className="grocery-price">${(g.cost * factor).toFixed(2)}</span>
-                </label>
-              ))}
-            </div>
-            <p className="muted small" style={{ margin: 0 }}>Untick anything you already have.</p>
-          </section>
-
-          <section className="card stack checkout-total">
-            <div className="row between">
-              <span>Subtotal</span>
-              <span>${subtotal.toFixed(2)}</span>
-            </div>
-            {fee ? (
-              <div className="row between">
-                <span>Delivery</span>
-                <span>${fee.toFixed(2)}</span>
-              </div>
-            ) : null}
-            <div className="row between" style={{ fontSize: 20 }}>
-              <b>Total</b>
-              <b>${total.toFixed(2)}</b>
-            </div>
-            <div className="row between small muted">
-              <span>Paid in MON on Monad testnet (demo rate 1 MON = ${USD_PER_MON.toLocaleString()})</span>
-              <span className="mono">{mon.toFixed(5)} MON</span>
-            </div>
-            <WalletBar w={w} label="Connect wallet to pay" />
-            {err ? <p className="err" style={{ margin: 0 }}>{err}</p> : null}
-            <button type="button" className="btn primary" onClick={pay} disabled={Boolean(busy) || !configured || !chosen.length}>
-              {busy === "wallet" ? (
-                <>
-                  <span className="spinner" /> Approve in your wallet…
-                </>
-              ) : busy === "chain" ? (
-                <>
-                  <span className="spinner" /> Confirming on Monad…
-                </>
-              ) : (
-                `Pay ${mon.toFixed(4)} MON on Monad`
-              )}
+          ) : null}
+          {order?.status === 1 ? (
+            <button type="button" className="btn" onClick={cancel} disabled={busy}>
+              Cancel for a full refund
             </button>
-            {tx ? (
-              <a className="small" href={txUrl(tx)} target="_blank" rel="noreferrer">
-                View payment on Monad explorer ↗
-              </a>
-            ) : null}
-            <p className="small muted" style={{ margin: 0 }}>
-              🔒 Your payment is held by the CampusCart contract, not the store. The store is paid only when you confirm you got your groceries. If the
-              store rejects the order or doesn&apos;t accept it within an hour, you get a full refund.
+          ) : null}
+          {err ? <p className="err">{err}</p> : null}
+          <div className="row small">
+            <Link href="/orders">See all my orders</Link>
+            <Link href="/store">Open the store screen</Link>
+            {kind === 1 ? <Link href="/driver">Open the driver screen</Link> : null}
+          </div>
+        </section>
+      ) : (
+        <section className="card stack" style={{ marginTop: 14 }}>
+          {!plan || !cart.length ? (
+            <p className="muted">
+              Your grocery list is empty. <Link href="/dashboard">Build a plan</Link> first.
             </p>
-          </section>
-        </div>
+          ) : (
+            <>
+              <div>
+                <label>How do you want it?</label>
+                <div className="option-grid">
+                  <button type="button" className={`option ${kind === 0 ? "on" : ""}`} onClick={() => (setKind(0), setTip(0))}>
+                    <b>Pickup</b>
+                    <small>Grab it at the store · free</small>
+                  </button>
+                  <button type="button" className={`option ${kind === 1 ? "on" : ""}`} onClick={() => (setKind(1), setTip(2))}>
+                    <b>Delivery</b>
+                    <small>To your door · {fmtUsd(DELIVERY_FEE)} + tip</small>
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label htmlFor="mstore">Store (accepting Monad orders)</label>
+                {stores == null ? (
+                  <p className="muted small">Loading stores from Monad…</p>
+                ) : stores.length ? (
+                  <select id="mstore" value={storeId ?? ""} onChange={(e) => setStoreId(+e.target.value)}>
+                    {stores.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.name}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <p className="notice small" style={{ margin: 0 }}>
+                    No stores on Monad yet. <Link href="/store">Open the store screen</Link> to set one up, then come back.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <div className="row between">
+                  <label style={{ margin: 0 }}>Your cart · {cart.length} items</label>
+                  <span className="small muted">{shopAt ? `${shopAt.name} prices` : "average prices"}</span>
+                </div>
+                <ul className="cart-lines">
+                  {cart.map((c) => (
+                    <li key={c.name}>
+                      <span>
+                        {c.name} <span className="muted small">· {c.pkg}</span>
+                      </span>
+                      <span className="grocery-price">${c.price.toFixed(2)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+
+              {kind === 1 ? (
+                <div>
+                  <label>Tip your driver</label>
+                  <div className="chips">
+                    {TIPS.map((t) => (
+                      <button key={t} type="button" className={`chip ${tip === t ? "on" : ""}`} onClick={() => setTip(t)}>
+                        {t ? `$${t}` : "No tip"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="totals">
+                <div>
+                  <span>Groceries</span>
+                  <span>{fmtUsd(subtotal)}</span>
+                </div>
+                {kind === 1 ? (
+                  <div>
+                    <span>Delivery</span>
+                    <span>{fmtUsd(fee)}</span>
+                  </div>
+                ) : null}
+                {tip ? (
+                  <div>
+                    <span>Tip</span>
+                    <span>{fmtUsd(tip)}</span>
+                  </div>
+                ) : null}
+                <div className="grand">
+                  <span>Total</span>
+                  <span>{fmtUsd(total)}</span>
+                </div>
+              </div>
+
+              <button type="button" className="btn primary pay-btn" onClick={pay} disabled={busy || !isDeployed || storeId == null}>
+                {busy ? (
+                  <>
+                    <span className="spinner" /> {step || "Working"}…
+                  </>
+                ) : (
+                  `Pay ${fmtUsd(total)} with Monad`
+                )}
+              </button>
+              {err ? <p className="err">{err}</p> : null}
+              <p className="small muted" style={{ margin: 0 }}>
+                Testnet demo: you pay in free test dollars (cfUSD). The payment is held by the GroceryCheckout contract and released to the store
+                {kind === 1 ? " and driver" : ""} only when you hand over your code.
+              </p>
+            </>
+          )}
+        </section>
       )}
     </main>
   );

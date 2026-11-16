@@ -6,21 +6,26 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "contracts:compile": "node scripts/compile.mjs",
+    "contracts:test": "node scripts/test-contracts.mjs",
+    "monad:wallet": "node scripts/new-deployer.mjs",
+    "monad:deploy": "node scripts/deploy.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.8.0",
     "next": "^15.5.29",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "viem": "^2.57.20",
+    "viem": "2.57.13",
     "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/node": "^26.6.6",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "solc": "^0.8.38",
+    "ganache": "7.9.2",
+    "solc": "0.8.38",
     "typescript": "5.9"
   }
 }

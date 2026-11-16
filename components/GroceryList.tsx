@@ -88,13 +88,6 @@ export default function GroceryList({ plan, profile }: { plan: MealPlan; profile
 
   return (
     <div className="card stack">
-      <Link href="/checkout" className="monad-cta noprint">
-        <span>
-          <b>Checkout &amp; pay on Monad</b>
-          <span className="small">Pickup or delivery · money held safely until you get your groceries</span>
-        </span>
-        <span aria-hidden>→</span>
-      </Link>
       <div className="row between">
         <h2 style={{ margin: 0 }}>Grocery list</h2>
         <div className="row noprint" style={{ gap: 6 }}>
@@ -160,6 +153,16 @@ export default function GroceryList({ plan, profile }: { plan: MealPlan; profile
           {left.length && left.length < plan.groceries.length ? `$${leftCost.toFixed(2)} left to buy. ` : ""}
           Priced by the package you buy; leftovers carry into next week.
         </p>
+      </div>
+
+      <div className="monad-cta noprint">
+        <div>
+          <b>Order this list with Monad</b>
+          <div className="small muted">Pickup or delivery, paid onchain in one tap. Your money waits in escrow until you get your groceries.</div>
+        </div>
+        <Link className="btn primary sm" href={`/checkout${store ? `?store=${encodeURIComponent(store.id)}` : ""}`}>
+          Checkout
+        </Link>
       </div>
 
       {compare.length > 1 ? (

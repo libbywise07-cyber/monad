@@ -523,21 +523,47 @@ body::before {
 .sync-bar .btn { margin-left: auto; }
 .sync-news { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
 
-/* ---------- Monad checkout ---------- */
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.92em; }
-.wallet-bar { background: var(--bg); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; }
-.monad-dot { width: 10px; height: 10px; border-radius: 50%; background: #836ef9; box-shadow: 0 0 0 3px rgba(131, 110, 249, 0.25); display: inline-block; }
-.monad-cta { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-decoration: none; color: #fff; background: linear-gradient(135deg, #6e54ff, #836ef9); border-radius: 14px; padding: 12px 16px; font-size: 18px; }
-.monad-cta span span { display: block; opacity: 0.85; font-size: 13px; }
-.monad-cta:hover { filter: brightness(1.06); }
-.order-steps { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.order-steps li { font-size: 12px; color: var(--muted); display: grid; gap: 6px; align-content: start; }
-.order-steps .dot { height: 6px; border-radius: 99px; background: var(--line); }
-.order-steps li.done .dot { background: #836ef9; }
-.order-steps li.now { color: var(--ink); font-weight: 600; }
-.order-steps li.now .dot { background: linear-gradient(90deg, #836ef9, #c4b8ff); animation: pulse 1.2s ease-in-out infinite; }
-.order-steps li.done { color: var(--ink); }
-@keyframes pulse { 50% { opacity: 0.5; } }
-@media (prefers-reduced-motion: reduce) { .order-steps li.now .dot { animation: none; } }
-@media (max-width: 520px) { .order-steps { grid-template-columns: 1fr 1fr; } }
-.code-box { background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; overflow-x: auto; white-space: pre; margin: 0; }
+/* ============================================================
+   Checkout with Monad
+   ============================================================ */
+:root { --monad: #836ef9; --monad-soft: #ece8ff; }
+.monad-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; font-weight: 600; padding: 5px 12px; border-radius: 999px; background: var(--monad-soft); color: #3d2f99; }
+.monad-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--monad); box-shadow: 0 0 0 3px color-mix(in srgb, var(--monad) 25%, transparent); }
+.monad-tabs { display: flex; gap: 6px; margin-top: 14px; overflow-x: auto; }
+.monad-tabs a { padding: 7px 14px; border-radius: 999px; background: var(--card); color: var(--muted); font-size: 14px; font-weight: 600; text-decoration: none; white-space: nowrap; box-shadow: var(--shadow); }
+.monad-tabs a.on { background: var(--brand); color: var(--brand-ink); }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.wallet-card { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 18px; border-radius: var(--radius); background: linear-gradient(120deg, var(--monad-soft), var(--t-lav)); }
+.wallet-usd { font-size: 24px; font-weight: 600; letter-spacing: -0.02em; }
+.tx-link { display: inline-flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.paid-banner { display: grid; gap: 4px; padding: 14px 16px; border-radius: var(--radius-sm); background: var(--t-leaf); }
+.paid-banner b { font-size: 18px; }
+.status-pill { padding: 10px 14px; border-radius: 14px; font-size: 14px; font-weight: 600; }
+.status-pill.cancel, .status-pill.refund { background: var(--t-peony); }
+.timeline-steps { list-style: none; margin: 0; padding: 0; display: flex; gap: 6px; flex-wrap: wrap; }
+.timeline-steps li { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 999px; background: var(--t-cream); color: var(--muted); }
+.timeline-steps li .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--line); }
+.timeline-steps li.done { background: var(--t-leaf); color: var(--ink); }
+.timeline-steps li.done .dot { background: var(--ok); }
+.timeline-steps li.next { background: var(--monad-soft); color: #3d2f99; }
+.timeline-steps li.next .dot { background: var(--monad); animation: pulse 1.2s ease-in-out infinite; }
+@keyframes pulse { 50% { transform: scale(1.6); opacity: 0.5; } }
+.handoff { text-align: center; padding: 16px; border-radius: var(--radius-sm); border: 2px dashed var(--monad); background: color-mix(in srgb, var(--monad-soft) 50%, var(--card)); }
+.handoff-code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 30px; font-weight: 700; letter-spacing: 0.12em; margin: 6px 0; }
+.handoff-code.sm { font-size: 15px; display: inline; letter-spacing: 0.08em; }
+.cart-lines { list-style: none; margin: 6px 0 0; padding: 0; max-height: 260px; overflow-y: auto; }
+.cart-lines li { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-bottom: 1px dashed var(--line); font-size: 14px; }
+.totals { display: grid; gap: 4px; padding: 12px 14px; border-radius: var(--radius-sm); background: var(--t-cream); font-size: 14px; }
+.totals > div { display: flex; justify-content: space-between; }
+.totals .grand { font-size: 17px; font-weight: 700; border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; }
+.pay-btn { width: 100%; padding: 14px; font-size: 16px; }
+.code-input { width: 170px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: 0.08em; }
+.monad-cta { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: var(--radius-sm); background: linear-gradient(120deg, var(--monad-soft), var(--t-lav)); }
+.wallet-card { flex-direction: column; align-items: stretch; }
+.wallet-top { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.wallet-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+.mm-btn { background: #f6851b; border-color: #f6851b; color: #fff; }
+.mm-btn:hover { filter: brightness(1.08); border-color: #f6851b; }
+.back-link { display: inline-block; margin-top: 4px; font-size: 14px; font-weight: 600; color: var(--muted); text-decoration: none; }
+.back-link:hover { color: var(--ink); }
+.close-btn { font-size: 15px; font-weight: 600; text-decoration: none; background: var(--card); box-shadow: var(--shadow); }

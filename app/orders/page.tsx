@@ -1,56 +1,40 @@
 "use client";
+// The student's Monad orders with live status, handoff codes and refunds.
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
-import OrderCard from "@/components/OrderCard";
-import WalletBar, { useWallet } from "@/components/WalletBar";
-import { cancelOrder, cartAddress, confirmReceived, friendlyError, ordersFor, txUrl, waitFor, type Order } from "@/lib/monad/client";
+import { useEffect, useState } from "react";
+import { MonadHeader, useRoleAddress, OrderSummary, StatusTimeline, useInterval, WalletCard } from "@/components/monad/MonadUI";
+import { isDeployed } from "@/lib/monad/config";
+import { explain, getOrders, listStores, loadCode, myOrderIds, writeCheckout, type OnchainOrder } from "@/lib/monad/client";
 
-/** The student's orders, read live from Monad every 2 seconds. */
 export default function Orders() {
-  const w = useWallet();
-  const [orders, setOrders] = useState<Order[] | null>(null);
-  const [busy, setBusy] = useState("");
+  const [orders, setOrders] = useState<OnchainOrder[] | null>(null);
+  const [stores, setStores] = useState<Record<number, string>>({});
+  const student = useRoleAddress("student");
+  const [busy, setBusy] = useState<string>("");
   const [err, setErr] = useState("");
-  const [lastTx, setLastTx] = useState<Record<string, string>>({});
-  const [placed, setPlaced] = useState<{ id: string; tx: string } | null>(null);
 
   useEffect(() => {
-    const sp = new URLSearchParams(window.location.search);
-    const id = sp.get("id");
-    const tx = sp.get("tx");
-    if (id && tx) {
-      setPlaced({ id, tx });
-      setLastTx((x) => ({ ...x, [id]: tx }));
-    }
+    if (isDeployed) listStores().then((s) => setStores(Object.fromEntries(s.map((x) => [x.id, x.name]))));
   }, []);
 
-  const load = useCallback(async () => {
-    if (!w.account || !cartAddress()) return;
-    try {
-      setOrders(await ordersFor(w.account, "buyer"));
-    } catch (e) {
-      setErr(friendlyError(e));
-    }
-  }, [w.account]);
+  useInterval(
+    () => {
+      myOrderIds()
+        .then((ids) => getOrders(ids))
+        .then((o) => setOrders(o.reverse()))
+        .catch(() => setOrders((x) => x ?? []));
+    },
+    1500,
+    isDeployed,
+  );
 
-  useEffect(() => {
-    load();
-    const t = setInterval(load, 2000);
-    return () => clearInterval(t);
-  }, [load]);
-
-  const act = async (o: Order, what: "confirm" | "cancel") => {
-    if (!w.account) return;
+  const cancel = async (id: bigint) => {
+    setBusy(id.toString());
     setErr("");
-    setBusy(o.id.toString() + what);
     try {
-      const hash = await (what === "confirm" ? confirmReceived : cancelOrder)(w.account, o.id);
-      setLastTx((x) => ({ ...x, [o.id.toString()]: hash }));
-      await waitFor(hash);
-      await load();
-      w.refreshBalance();
+      await writeCheckout("student", "cancel", [id]);
     } catch (e) {
-      setErr(friendlyError(e));
+      setErr(explain(e));
     } finally {
       setBusy("");
     }
@@ -58,62 +42,36 @@ export default function Orders() {
 
   return (
     <main className="wrap narrow">
-      <nav className="row between" style={{ marginBottom: 14 }}>
-        <Link href="/dashboard" className="btn sm">
-          ← Back to plan
-        </Link>
-        <Link href="/checkout" className="btn sm ghost">
-          New order
-        </Link>
-      </nav>
-      <h1 style={{ fontSize: 30 }}>My orders</h1>
-      <p className="muted">Live from Monad. Status updates within a second or two of the store tapping a button.</p>
-      <WalletBar w={w} label="Connect wallet to see your orders" />
-      {placed ? (
-        <div className="notice" style={{ marginTop: 12 }}>
-          ✅ Order #{placed.id} paid on Monad.{" "}
-          <a href={txUrl(placed.tx)} target="_blank" rel="noreferrer">
-            See the payment ↗
-          </a>
-        </div>
-      ) : null}
+      <MonadHeader title="my orders" sub="Every order, payment and refund is onchain on Monad." />
+      {student ? <WalletCard role="student" label="Your wallet" address={student} /> : null}
       {err ? <p className="err">{err}</p> : null}
       <div className="stack" style={{ marginTop: 14 }}>
-        {!cartAddress() ? (
-          <div className="notice">
-            Monad isn&apos;t set up yet. <Link href="/monad">Open Monad setup</Link>.
-          </div>
-        ) : !w.account ? null : orders === null ? (
-          <div className="row muted">
-            <span className="spinner" /> Reading your orders from Monad…
-          </div>
-        ) : orders.length ? (
-          orders.map((o) => (
-            <OrderCard
-              key={o.id.toString()}
-              o={o}
-              view="buyer"
-              lastTx={lastTx[o.id.toString()]}
-              actions={
-                <>
-                  {o.status === "Accepted" || o.status === "Ready" ? (
-                    <button type="button" className="btn primary sm" disabled={Boolean(busy)} onClick={() => act(o, "confirm")}>
-                      {busy === o.id + "confirm" ? "Confirming…" : o.method === "delivery" ? "✓ I got my delivery" : "✓ I picked it up"}
-                    </button>
-                  ) : null}
-                  {o.status === "Paid" ? (
-                    <button type="button" className="btn sm" disabled={Boolean(busy)} onClick={() => act(o, "cancel")}>
-                      {busy === o.id + "cancel" ? "Refunding…" : "Cancel & refund"}
-                    </button>
-                  ) : null}
-                </>
-              }
-            />
-          ))
-        ) : (
+        {orders == null ? (
+          <p className="muted">Loading your orders from Monad…</p>
+        ) : !orders.length ? (
           <p className="muted">
             No orders yet. <Link href="/checkout">Check out your grocery list</Link>.
           </p>
+        ) : (
+          orders.map((o) => {
+            const code = loadCode(o.id);
+            return (
+              <section key={o.id.toString()} className="card stack">
+                <OrderSummary order={o} storeName={stores[o.storeId]} />
+                <StatusTimeline order={o} />
+                {code && o.status < 5 ? (
+                  <div className="small">
+                    Handoff code: <span className="handoff-code sm">{code}</span>
+                  </div>
+                ) : null}
+                {o.status === 1 ? (
+                  <button type="button" className="btn sm" onClick={() => cancel(o.id)} disabled={busy === o.id.toString()}>
+                    {busy === o.id.toString() ? "Cancelling…" : "Cancel for a full refund"}
+                  </button>
+                ) : null}
+              </section>
+            );
+          })
         )}
       </div>
     </main>

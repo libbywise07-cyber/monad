@@ -1,0 +1,9 @@
+{
+  "chainId": 10143,
+  "network": "Monad Testnet",
+  "explorer": "https://testnet.monadvision.com",
+  "token": null,
+  "checkout": null,
+  "startBlock": 0,
+  "deployedAt": null
+}
